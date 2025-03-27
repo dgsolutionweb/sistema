@@ -5,6 +5,20 @@ axios.defaults.baseURL = API_URL;
 // React Hooks
 const { useState, useEffect, useContext } = React;
 
+// Utility Functions
+const stringToColor = (str) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    let color = '#';
+    for (let i = 0; i < 3; i++) {
+        const value = (hash >> (i * 8)) & 0xFF;
+        color += ('00' + value.toString(16)).substr(-2);
+    }
+    return color;
+};
+
 // Context for Authentication
 const AuthContext = React.createContext(null);
 
@@ -662,6 +676,133 @@ const MovementModal = ({ show, onHide, products, onSubmit }) => {
     );
 };
 
+// User Details Modal Component
+const UserDetailsModal = ({ show, onHide, user }) => {
+    if (!user) return null;
+
+    return (
+        <div className={`modal ${show ? 'show' : ''}`} style={{ display: show ? 'block' : 'none' }}>
+            <div className="modal-dialog modal-lg">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h5 className="modal-title">Detalhes do Usuário</h5>
+                        <button type="button" className="btn-close" onClick={onHide}></button>
+                    </div>
+                    <div className="modal-body">
+                        <div className="row">
+                            <div className="col-md-4 text-center mb-4">
+                                <div 
+                                    className="avatar-circle mx-auto mb-3" 
+                                    style={{ 
+                                        backgroundColor: stringToColor(user.name),
+                                        width: '120px',
+                                        height: '120px',
+                                        fontSize: '3rem'
+                                    }}
+                                >
+                                    {user.name.charAt(0).toUpperCase()}
+                                </div>
+                                <h4>{user.name}</h4>
+                                <span className="badge bg-info text-dark mb-2">{user.company}</span>
+                                <div className="mt-2">
+                                    {!user.isApproved && (
+                                        <span className="badge bg-warning text-dark d-block mb-1">
+                                            <i className="fas fa-clock me-1"></i>
+                                            Pendente
+                                        </span>
+                                    )}
+                                    {user.isApproved && !user.isBlocked && (
+                                        <span className="badge bg-success d-block mb-1">
+                                            <i className="fas fa-check me-1"></i>
+                                            Ativo
+                                        </span>
+                                    )}
+                                    {user.isBlocked && (
+                                        <span className="badge bg-danger d-block mb-1">
+                                            <i className="fas fa-ban me-1"></i>
+                                            Bloqueado
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="col-md-8">
+                                <div className="card mb-3">
+                                    <div className="card-body">
+                                        <h6 className="card-subtitle mb-3 text-muted">Informações Básicas</h6>
+                                        <dl className="row mb-0">
+                                            <dt className="col-sm-4">ID</dt>
+                                            <dd className="col-sm-8">{user.id}</dd>
+
+                                            <dt className="col-sm-4">Email</dt>
+                                            <dd className="col-sm-8">{user.email}</dd>
+
+                                            <dt className="col-sm-4">Empresa</dt>
+                                            <dd className="col-sm-8">{user.company}</dd>
+
+                                            <dt className="col-sm-4">Data de Registro</dt>
+                                            <dd className="col-sm-8">
+                                                {new Date(user.createdAt).toLocaleDateString()} às {new Date(user.createdAt).toLocaleTimeString()}
+                                            </dd>
+
+                                            <dt className="col-sm-4">Último Acesso</dt>
+                                            <dd className="col-sm-8">
+                                                {user.lastLogin ? (
+                                                    `${new Date(user.lastLogin).toLocaleDateString()} às ${new Date(user.lastLogin).toLocaleTimeString()}`
+                                                ) : (
+                                                    'Nunca acessou'
+                                                )}
+                                            </dd>
+                                        </dl>
+                                    </div>
+                                </div>
+
+                                <div className="card">
+                                    <div className="card-body">
+                                        <h6 className="card-subtitle mb-3 text-muted">Ações</h6>
+                                        <div className="d-flex gap-2">
+                                            {!user.isApproved && (
+                                                <button
+                                                    className="btn btn-success"
+                                                    onClick={() => handleStatusChange(user.id, 'approve')}
+                                                >
+                                                    <i className="fas fa-check me-2"></i>
+                                                    Aprovar Usuário
+                                                </button>
+                                            )}
+                                            <button
+                                                className={`btn btn-${user.isBlocked ? 'warning' : 'danger'}`}
+                                                onClick={() => handleStatusChange(user.id, user.isBlocked ? 'unblock' : 'block')}
+                                            >
+                                                <i className={`fas fa-${user.isBlocked ? 'unlock' : 'ban'} me-2`}></i>
+                                                {user.isBlocked ? 'Desbloquear Usuário' : 'Bloquear Usuário'}
+                                            </button>
+                                            <button
+                                                className="btn btn-danger"
+                                                onClick={() => {
+                                                    if (confirm('Tem certeza que deseja excluir este usuário?')) {
+                                                        handleDeleteUser(user.id);
+                                                        onHide();
+                                                    }
+                                                }}
+                                            >
+                                                <i className="fas fa-trash me-2"></i>
+                                                Excluir Usuário
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="modal-footer">
+                        <button type="button" className="btn btn-secondary" onClick={onHide}>Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // Update Dashboard Component
 const Dashboard = () => {
     const { token, user, logout } = useContext(AuthContext);
@@ -679,6 +820,8 @@ const Dashboard = () => {
     const [currentPage, setCurrentPage] = useState('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
 
     const fetchData = async () => {
         if (!token) {
@@ -834,99 +977,308 @@ const Dashboard = () => {
         }
     };
 
+    const handleViewUserDetails = (userId) => {
+        const user = users.find(u => u.id === userId);
+        if (user) {
+            setSelectedUser(user);
+            setShowUserDetailsModal(true);
+        }
+    };
+
     const filteredProducts = products.filter(product => 
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         product.category.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const renderAdminPanel = () => (
-        <div className="container-fluid py-4">
-            <div className="row">
-                <div className="col-12">
-                    <div className="card">
-                        <div className="card-header">
-                            <h3 className="card-title">Gerenciamento de Usuários</h3>
-                        </div>
-                        <div className="card-body">
-                            {error && (
-                                <div className="alert alert-danger alert-dismissible fade show" role="alert">
-                                    {error}
-                                    <button type="button" className="btn-close" onClick={() => setError('')}></button>
-                                </div>
-                            )}
-                            
-                            {successMessage && (
-                                <div className="alert alert-success alert-dismissible fade show" role="alert">
-                                    {successMessage}
-                                    <button type="button" className="btn-close" onClick={() => setSuccessMessage('')}></button>
-                                </div>
-                            )}
+    const renderAdminPanel = () => {
+        // Calcular estatísticas dos usuários
+        const totalUsers = users.length;
+        const pendingUsers = users.filter(user => !user.isApproved).length;
+        const blockedUsers = users.filter(user => user.isBlocked).length;
+        const activeUsers = users.filter(user => user.isApproved && !user.isBlocked).length;
 
-                            <div className="table-responsive">
-                                <table className="table table-striped table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Nome</th>
-                                            <th>Email</th>
-                                            <th>Empresa</th>
-                                            <th>Status</th>
-                                            <th>Data de Registro</th>
-                                            <th>Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {users.map(user => (
-                                            <tr key={user.id}>
-                                                <td>{user.name}</td>
-                                                <td>{user.email}</td>
-                                                <td>{user.company}</td>
-                                                <td>
-                                                    <span className={`badge ${user.isApproved ? 'bg-success' : 'bg-warning'}`}>
-                                                        {user.isApproved ? 'Aprovado' : 'Pendente'}
-                                                    </span>
-                                                    {user.isBlocked && (
-                                                        <span className="badge bg-danger ms-1">Bloqueado</span>
-                                                    )}
-                                                </td>
-                                                <td>{new Date(user.createdAt).toLocaleDateString()}</td>
-                                                <td>
-                                                    <div className="btn-group">
-                                                        {!user.isApproved && (
-                                                            <button
-                                                                className="btn btn-success btn-sm"
-                                                                onClick={() => handleStatusChange(user.id, 'approve')}
-                                                                title="Aprovar"
-                                                            >
-                                                                <i className="fas fa-check"></i>
-                                                            </button>
-                                                        )}
-                                                        <button
-                                                            className={`btn btn-${user.isBlocked ? 'warning' : 'danger'} btn-sm`}
-                                                            onClick={() => handleStatusChange(user.id, user.isBlocked ? 'unblock' : 'block')}
-                                                            title={user.isBlocked ? 'Desbloquear' : 'Bloquear'}
-                                                        >
-                                                            <i className={`fas fa-${user.isBlocked ? 'unlock' : 'ban'}`}></i>
-                                                        </button>
-                                                        <button
-                                                            className="btn btn-danger btn-sm"
-                                                            onClick={() => handleDeleteUser(user.id)}
-                                                            title="Excluir"
-                                                        >
-                                                            <i className="fas fa-trash"></i>
-                                                        </button>
+        return (
+            <div className="container-fluid py-4">
+                {/* Cards de Estatísticas */}
+                <div className="row mb-4">
+                    <div className="col-xl-3 col-md-6 mb-4">
+                        <div className="card border-left-primary shadow h-100 py-2">
+                            <div className="card-body">
+                                <div className="row no-gutters align-items-center">
+                                    <div className="col mr-2">
+                                        <div className="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                            Total de Usuários
+                                        </div>
+                                        <div className="h5 mb-0 font-weight-bold text-gray-800">{totalUsers}</div>
+                                    </div>
+                                    <div className="col-auto">
+                                        <i className="fas fa-users fa-2x text-gray-300"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-xl-3 col-md-6 mb-4">
+                        <div className="card border-left-warning shadow h-100 py-2">
+                            <div className="card-body">
+                                <div className="row no-gutters align-items-center">
+                                    <div className="col mr-2">
+                                        <div className="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                            Pendentes
+                                        </div>
+                                        <div className="h5 mb-0 font-weight-bold text-gray-800">{pendingUsers}</div>
+                                    </div>
+                                    <div className="col-auto">
+                                        <i className="fas fa-clock fa-2x text-gray-300"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-xl-3 col-md-6 mb-4">
+                        <div className="card border-left-success shadow h-100 py-2">
+                            <div className="card-body">
+                                <div className="row no-gutters align-items-center">
+                                    <div className="col mr-2">
+                                        <div className="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                            Ativos
+                                        </div>
+                                        <div className="h5 mb-0 font-weight-bold text-gray-800">{activeUsers}</div>
+                                    </div>
+                                    <div className="col-auto">
+                                        <i className="fas fa-check-circle fa-2x text-gray-300"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-xl-3 col-md-6 mb-4">
+                        <div className="card border-left-danger shadow h-100 py-2">
+                            <div className="card-body">
+                                <div className="row no-gutters align-items-center">
+                                    <div className="col mr-2">
+                                        <div className="text-xs font-weight-bold text-danger text-uppercase mb-1">
+                                            Bloqueados
+                                        </div>
+                                        <div className="h5 mb-0 font-weight-bold text-gray-800">{blockedUsers}</div>
+                                    </div>
+                                    <div className="col-auto">
+                                        <i className="fas fa-ban fa-2x text-gray-300"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Alertas e Mensagens */}
+                {error && (
+                    <div className="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+                        <div className="d-flex align-items-center">
+                            <i className="fas fa-exclamation-circle me-2"></i>
+                            <div className="flex-grow-1">{error}</div>
+                        </div>
+                        <button type="button" className="btn-close" onClick={() => setError('')} aria-label="Fechar"></button>
+                    </div>
+                )}
+                
+                {successMessage && (
+                    <div className="alert alert-success alert-dismissible fade show mb-4" role="alert">
+                        <div className="d-flex align-items-center">
+                            <i className="fas fa-check-circle me-2"></i>
+                            <div className="flex-grow-1">{successMessage}</div>
+                        </div>
+                        <button type="button" className="btn-close" onClick={() => setSuccessMessage('')} aria-label="Fechar"></button>
+                    </div>
+                )}
+
+                {/* Tabela de Usuários */}
+                <div className="card shadow mb-4">
+                    <div className="card-header py-3 d-flex flex-wrap justify-content-between align-items-center">
+                        <h6 className="m-0 font-weight-bold text-primary">Gerenciamento de Usuários</h6>
+                        <div className="d-flex gap-2">
+                            <div className="input-group">
+                                <span className="input-group-text">
+                                    <i className="fas fa-search"></i>
+                                </span>
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    placeholder="Buscar usuários..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <button 
+                                className="btn btn-primary" 
+                                onClick={() => fetchUsers()}
+                                title="Atualizar lista"
+                            >
+                                <i className="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div className="card-body">
+                        <div className="table-responsive">
+                            <table className="table table-hover">
+                                <thead className="table-light">
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Email</th>
+                                        <th>Empresa</th>
+                                        <th>Status</th>
+                                        <th>Último Acesso</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {users.filter(user => 
+                                        user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                        user.company.toLowerCase().includes(searchTerm.toLowerCase())
+                                    ).map(user => (
+                                        <tr key={user.id}>
+                                            <td>
+                                                <div className="d-flex align-items-center">
+                                                    <div className="avatar-circle me-2" style={{ backgroundColor: stringToColor(user.name) }}>
+                                                        {user.name.charAt(0).toUpperCase()}
                                                     </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                                    <div>
+                                                        <div className="fw-bold">{user.name}</div>
+                                                        <small className="text-muted">ID: {user.id}</small>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>{user.email}</td>
+                                            <td>
+                                                <span className="badge bg-info text-dark">
+                                                    {user.company}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div className="d-flex flex-column gap-1">
+                                                    {!user.isApproved && (
+                                                        <span className="badge bg-warning text-dark">
+                                                            <i className="fas fa-clock me-1"></i>
+                                                            Pendente
+                                                        </span>
+                                                    )}
+                                                    {user.isApproved && !user.isBlocked && (
+                                                        <span className="badge bg-success">
+                                                            <i className="fas fa-check me-1"></i>
+                                                            Ativo
+                                                        </span>
+                                                    )}
+                                                    {user.isBlocked && (
+                                                        <span className="badge bg-danger">
+                                                            <i className="fas fa-ban me-1"></i>
+                                                            Bloqueado
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div>
+                                                    {new Date(user.lastLogin || user.createdAt).toLocaleDateString()}
+                                                    <small className="d-block text-muted">
+                                                        {new Date(user.lastLogin || user.createdAt).toLocaleTimeString()}
+                                                    </small>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div className="btn-group">
+                                                    {!user.isApproved && (
+                                                        <button
+                                                            className="btn btn-success btn-sm"
+                                                            onClick={() => handleStatusChange(user.id, 'approve')}
+                                                            title="Aprovar usuário"
+                                                        >
+                                                            <i className="fas fa-check"></i>
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        className={`btn btn-${user.isBlocked ? 'warning' : 'danger'} btn-sm`}
+                                                        onClick={() => handleStatusChange(user.id, user.isBlocked ? 'unblock' : 'block')}
+                                                        title={user.isBlocked ? 'Desbloquear usuário' : 'Bloquear usuário'}
+                                                    >
+                                                        <i className={`fas fa-${user.isBlocked ? 'unlock' : 'ban'}`}></i>
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-info btn-sm"
+                                                        onClick={() => handleViewUserDetails(user.id)}
+                                                        title="Ver detalhes"
+                                                    >
+                                                        <i className="fas fa-eye"></i>
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-danger btn-sm"
+                                                        onClick={() => handleDeleteUser(user.id)}
+                                                        title="Excluir usuário"
+                                                    >
+                                                        <i className="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {users.length === 0 && (
+                            <div className="text-center py-5">
+                                <i className="fas fa-users fa-3x text-muted mb-3"></i>
+                                <p className="text-muted">Nenhum usuário encontrado</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Gráficos e Estatísticas */}
+                <div className="row">
+                    <div className="col-xl-6 mb-4">
+                        <div className="card shadow h-100">
+                            <div className="card-header py-3">
+                                <h6 className="m-0 font-weight-bold text-primary">Distribuição de Status</h6>
+                            </div>
+                            <div className="card-body">
+                                <div className="chart-pie pt-4">
+                                    {/* Aqui você pode adicionar um gráfico de pizza mostrando a distribuição dos status */}
+                                    <div className="mt-4 text-center small">
+                                        <span className="me-2">
+                                            <i className="fas fa-circle text-success"></i> Ativos
+                                        </span>
+                                        <span className="me-2">
+                                            <i className="fas fa-circle text-warning"></i> Pendentes
+                                        </span>
+                                        <span>
+                                            <i className="fas fa-circle text-danger"></i> Bloqueados
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-xl-6 mb-4">
+                        <div className="card shadow h-100">
+                            <div className="card-header py-3">
+                                <h6 className="m-0 font-weight-bold text-primary">Registros por Período</h6>
+                            </div>
+                            <div className="card-body">
+                                <div className="chart-area">
+                                    {/* Aqui você pode adicionar um gráfico de linha mostrando registros ao longo do tempo */}
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderRegularDashboard = () => {
         // Calcular o valor total dos produtos
@@ -1184,6 +1536,15 @@ const Dashboard = () => {
                 onHide={() => setShowMovementModal(false)}
                 products={products}
                 onSubmit={handleMovementSubmit}
+            />
+
+            <UserDetailsModal
+                show={showUserDetailsModal}
+                onHide={() => {
+                    setShowUserDetailsModal(false);
+                    setSelectedUser(null);
+                }}
+                user={selectedUser}
             />
         </React.Fragment>
     );
