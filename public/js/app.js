@@ -10,101 +10,94 @@ const AuthContext = React.createContext(null);
 
 // Auth Provider Component
 const AuthProvider = ({ children }) => {
-    const [token, setToken] = useState(() => {
-        try {
-            return localStorage.getItem('token') || null;
-        } catch (error) {
-            console.error('Error reading token from localStorage:', error);
-            return null;
-        }
-    });
-    
-    const [user, setUser] = useState(() => {
-        try {
-            const storedUser = localStorage.getItem('user');
-            return storedUser ? JSON.parse(storedUser) : null;
-        } catch (error) {
-            console.error('Error reading user from localStorage:', error);
-            return null;
-        }
-    });
-    
-    const [isInitialized, setIsInitialized] = useState(false);
+    const [token, setToken] = useState(null);
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-    const updateUserContext = (userData) => {
-        if (!userData) return;
-        
+    useEffect(() => {
+        initializeAuth();
+    }, []);
+
+    const initializeAuth = async () => {
         try {
-            setUser(userData);
-            localStorage.setItem('user', JSON.stringify(userData));
+            const storedToken = localStorage.getItem('token');
+            const storedUserData = localStorage.getItem('userData');
+
+            if (storedToken && storedUserData) {
+                const userData = JSON.parse(storedUserData);
+                setToken(storedToken);
+                setUser(userData);
+                axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+            }
         } catch (error) {
-            console.error('Error updating user context:', error);
+            console.error('Error initializing auth:', error);
+            logout();
+        } finally {
+            setLoading(false);
         }
     };
 
-    const login = async (newToken, userData) => {
-        if (!newToken || !userData) {
-            throw new Error('Token e dados do usuário são necessários para login');
-        }
+    const updateUserContext = (userData) => {
+        setUser(userData);
+        localStorage.setItem('userData', JSON.stringify(userData));
+    };
 
+    const login = async (email, password) => {
         try {
-            // Configure axios with the new token
+            const response = await axios.post('/auth/login', { email, password });
+            
+            if (!response.data || !response.data.token) {
+                throw new Error('Resposta inválida do servidor');
+            }
+
+            const { token: newToken, user: userData } = response.data;
+            
+            // Criar objeto de usuário com os dados completos
+            const userObject = {
+                id: userData.id,
+                email: userData.email,
+                name: userData.name,
+                company: userData.company,
+                isAdmin: userData.isAdmin,
+                isApproved: userData.isApproved,
+                isBlocked: userData.isBlocked
+            };
+
+            // Verificar as condições de acesso
+            if (!userObject.isApproved && !userObject.isAdmin) {
+                throw new Error('Sua conta está aguardando aprovação do administrador.');
+            }
+
+            if (userObject.isBlocked) {
+                throw new Error('Sua conta está bloqueada. Entre em contato com o administrador.');
+            }
+
+            setToken(newToken);
+            setUser(userObject);
+            localStorage.setItem('token', newToken);
+            localStorage.setItem('userData', JSON.stringify(userObject));
+            
+            // Configure axios defaults
             axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
             
-            // Test the token with a simple request
-            await axios.get('/products');
-            
-            // If the request is successful, update the state and localStorage
-            setToken(newToken);
-            setUser(userData);
-            localStorage.setItem('token', newToken);
-            localStorage.setItem('user', JSON.stringify(userData));
+            return userObject;
         } catch (error) {
-            console.error('Error validating token:', error);
-            logout();
-            throw new Error('Falha na autenticação. Por favor, tente novamente.');
+            const errorMessage = error.response && error.response.data && error.response.data.message 
+                ? error.response.data.message 
+                : error.message || 'Erro ao fazer login';
+            throw new Error(errorMessage);
         }
     };
 
     const logout = () => {
-        try {
-            setToken(null);
-            setUser(null);
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            delete axios.defaults.headers.common['Authorization'];
-        } catch (error) {
-            console.error('Error during logout:', error);
-        }
+        setToken(null);
+        setUser(null);
+        localStorage.removeItem('token');
+        localStorage.removeItem('userData');
+        delete axios.defaults.headers.common['Authorization'];
     };
 
-    useEffect(() => {
-        const initializeAuth = async () => {
-            try {
-                if (token) {
-                    // Configure axios with the stored token
-                    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-                    
-                    // Test the stored token
-                    await axios.get('/products');
-                }
-            } catch (error) {
-                console.error('Error during auth initialization:', error);
-                logout();
-            } finally {
-                setIsInitialized(true);
-            }
-        };
-
-        initializeAuth();
-    }, [token]);
-
-    // Debug: Log user state changes
-    useEffect(() => {
-        console.log('Current user state:', user);
-    }, [user]);
-
-    if (!isInitialized) {
+    if (loading) {
         return <div className="spinner-overlay"><div className="spinner-border text-primary"></div></div>;
     }
 
@@ -203,7 +196,7 @@ const Register = () => {
     );
 };
 
-// Update Login Component
+// Login Component
 const Login = () => {
     const { login } = useContext(AuthContext);
     const [formData, setFormData] = useState({
@@ -211,77 +204,74 @@ const Login = () => {
         password: ''
     });
     const [error, setError] = useState('');
-    const [showRegister, setShowRegister] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
+        setLoading(true);
+
         try {
-            const response = await axios.post('/auth/login', formData);
-            console.log('Login response:', response.data);
-
-            if (response.data && response.data.token) {
-                // Cria um objeto de usuário com os dados do login
-                const userData = {
-                    email: formData.email,
-                    // Outros campos serão preenchidos quando o usuário abrir as configurações
-                    name: '',
-                    company: ''
-                };
-
-                // Configura o token e faz login
-                await login(response.data.token, userData);
-            } else {
-                throw new Error('Token não recebido do servidor');
-            }
+            // Fazer login usando a função do AuthContext
+            await login(formData.email, formData.password);
         } catch (error) {
             console.error('Login error:', error);
-            setError(error.response && error.response.data && error.response.data.message 
+            const errorMessage = error.response && error.response.data && error.response.data.message 
                 ? error.response.data.message 
-                : 'Erro ao fazer login');
+                : 'Erro ao fazer login. Por favor, tente novamente.';
+            setError(errorMessage);
+        } finally {
+            setLoading(false);
         }
     };
-
-    if (showRegister) {
-        return <Register />;
-    }
 
     return (
         <div className="container mt-5">
             <div className="row justify-content-center">
-                <div className="col-md-6">
-                    <div className="card">
+                <div className="col-md-6 col-lg-4">
+                    <div className="card shadow">
                         <div className="card-body">
-                            <h3 className="card-title text-center mb-4">Login</h3>
-                            {error && <div className="alert alert-danger">{error}</div>}
+                            <h2 className="text-center mb-4">Login</h2>
+                            {error && (
+                                <div className="alert alert-danger alert-dismissible fade show" role="alert">
+                                    {error}
+                                    <button type="button" className="btn-close" onClick={() => setError('')}></button>
+                                </div>
+                            )}
                             <form onSubmit={handleSubmit}>
                                 <div className="mb-3">
-                                    <label className="form-label">Email</label>
+                                    <label htmlFor="email" className="form-label">Email</label>
                                     <input
                                         type="email"
                                         className="form-control"
+                                        id="email"
                                         value={formData.email}
-                                        onChange={(e) => setFormData({...formData, email: e.target.value})}
+                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         required
                                     />
                                 </div>
                                 <div className="mb-3">
-                                    <label className="form-label">Senha</label>
+                                    <label htmlFor="password" className="form-label">Senha</label>
                                     <input
                                         type="password"
                                         className="form-control"
+                                        id="password"
                                         value={formData.password}
-                                        onChange={(e) => setFormData({...formData, password: e.target.value})}
+                                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                         required
                                     />
                                 </div>
-                                <button type="submit" className="btn btn-primary w-100">Entrar</button>
+                                <button 
+                                    type="submit" 
+                                    className="btn btn-primary w-100"
+                                    disabled={loading}
+                                >
+                                    {loading ? (
+                                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                    ) : null}
+                                    Entrar
+                                </button>
                             </form>
-                            <div className="text-center mt-3">
-                                <a href="#" onClick={(e) => {
-                                    e.preventDefault();
-                                    setShowRegister(true);
-                                }}>Não tem uma conta? Registre-se</a>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -519,11 +509,12 @@ const MovementModal = ({ show, onHide, products, onSubmit }) => {
 
 // Update Dashboard Component
 const Dashboard = () => {
-    const { token, logout } = useContext(AuthContext);
+    const { token, user, logout } = useContext(AuthContext);
     const [stats, setStats] = useState(null);
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
     const [movements, setMovements] = useState([]);
+    const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showProductModal, setShowProductModal] = useState(false);
@@ -532,6 +523,7 @@ const Dashboard = () => {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [currentPage, setCurrentPage] = useState('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
 
     const fetchData = async () => {
         if (!token) {
@@ -574,11 +566,62 @@ const Dashboard = () => {
         }
     };
 
+    const fetchUsers = async () => {
+        try {
+            const response = await axios.get('/auth/users');
+            setUsers(response.data);
+        } catch (error) {
+            setError('Erro ao carregar usuários');
+            console.error('Error fetching users:', error);
+        }
+    };
+
+    const handleStatusChange = async (userId, action) => {
+        try {
+            await axios.put(`/auth/users/${userId}/${action}`);
+            setSuccessMessage(`Usuário ${action} com sucesso!`);
+            fetchUsers();
+            
+            setTimeout(() => {
+                setSuccessMessage('');
+            }, 3000);
+        } catch (error) {
+            const errorMessage = error.response && error.response.data && error.response.data.message 
+                ? error.response.data.message 
+                : 'Erro ao atualizar usuário';
+            setError(errorMessage);
+            console.error('Error updating user:', error);
+        }
+    };
+
+    const handleDeleteUser = async (userId) => {
+        if (!confirm('Tem certeza que deseja excluir este usuário?')) return;
+        
+        try {
+            await axios.delete(`/auth/users/${userId}`);
+            setSuccessMessage('Usuário excluído com sucesso!');
+            fetchUsers();
+            
+            setTimeout(() => {
+                setSuccessMessage('');
+            }, 3000);
+        } catch (error) {
+            const errorMessage = error.response && error.response.data && error.response.data.message 
+                ? error.response.data.message 
+                : 'Erro ao excluir usuário';
+            setError(errorMessage);
+            console.error('Error deleting user:', error);
+        }
+    };
+
     useEffect(() => {
         let mounted = true;
 
         if (token && mounted) {
             fetchData();
+            if (user && user.isAdmin) {
+                fetchUsers();
+            }
         }
 
         return () => {
@@ -641,6 +684,312 @@ const Dashboard = () => {
         product.category.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const renderAdminPanel = () => (
+        <div className="container-fluid py-4">
+            <div className="row">
+                <div className="col-12">
+                    <div className="card">
+                        <div className="card-header">
+                            <h3 className="card-title">Gerenciamento de Usuários</h3>
+                        </div>
+                        <div className="card-body">
+                            {error && (
+                                <div className="alert alert-danger alert-dismissible fade show" role="alert">
+                                    {error}
+                                    <button type="button" className="btn-close" onClick={() => setError('')}></button>
+                                </div>
+                            )}
+                            
+                            {successMessage && (
+                                <div className="alert alert-success alert-dismissible fade show" role="alert">
+                                    {successMessage}
+                                    <button type="button" className="btn-close" onClick={() => setSuccessMessage('')}></button>
+                                </div>
+                            )}
+
+                            <div className="table-responsive">
+                                <table className="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome</th>
+                                            <th>Email</th>
+                                            <th>Empresa</th>
+                                            <th>Status</th>
+                                            <th>Data de Registro</th>
+                                            <th>Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {users.map(user => (
+                                            <tr key={user.id}>
+                                                <td>{user.name}</td>
+                                                <td>{user.email}</td>
+                                                <td>{user.company}</td>
+                                                <td>
+                                                    <span className={`badge ${user.isApproved ? 'bg-success' : 'bg-warning'}`}>
+                                                        {user.isApproved ? 'Aprovado' : 'Pendente'}
+                                                    </span>
+                                                    {user.isBlocked && (
+                                                        <span className="badge bg-danger ms-1">Bloqueado</span>
+                                                    )}
+                                                </td>
+                                                <td>{new Date(user.createdAt).toLocaleDateString()}</td>
+                                                <td>
+                                                    <div className="btn-group">
+                                                        {!user.isApproved && (
+                                                            <button
+                                                                className="btn btn-success btn-sm"
+                                                                onClick={() => handleStatusChange(user.id, 'approve')}
+                                                                title="Aprovar"
+                                                            >
+                                                                <i className="fas fa-check"></i>
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            className={`btn btn-${user.isBlocked ? 'warning' : 'danger'} btn-sm`}
+                                                            onClick={() => handleStatusChange(user.id, user.isBlocked ? 'unblock' : 'block')}
+                                                            title={user.isBlocked ? 'Desbloquear' : 'Bloquear'}
+                                                        >
+                                                            <i className={`fas fa-${user.isBlocked ? 'unlock' : 'ban'}`}></i>
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-danger btn-sm"
+                                                            onClick={() => handleDeleteUser(user.id)}
+                                                            title="Excluir"
+                                                        >
+                                                            <i className="fas fa-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderRegularDashboard = () => {
+        // Calcular o valor total dos produtos
+        const totalValue = products.reduce((total, product) => {
+            return total + (product.price * product.quantity);
+        }, 0);
+
+        return (
+            <div className="container-fluid py-4">
+                <div className="d-flex flex-wrap gap-2 mb-4">
+                    <button 
+                        className="btn btn-info" 
+                        onClick={() => setShowCategoryModal(true)}
+                    >
+                        <i className="fas fa-tags me-2"></i>
+                        Gerenciar Categorias
+                    </button>
+                    <button 
+                        className="btn btn-primary" 
+                        onClick={() => {
+                            setSelectedProduct(null);
+                            setShowProductModal(true);
+                        }}
+                    >
+                        <i className="fas fa-plus me-2"></i>
+                        Novo Produto
+                    </button>
+                    <button 
+                        className="btn btn-success" 
+                        onClick={() => setShowMovementModal(true)}
+                    >
+                        <i className="fas fa-exchange-alt me-2"></i>
+                        Nova Movimentação
+                    </button>
+                    <button 
+                        className="btn btn-secondary" 
+                        onClick={() => {
+                            window.history.pushState({}, '', '/buscar');
+                            setCurrentPage('search');
+                        }}
+                    >
+                        <i className="fas fa-search me-2"></i>
+                        Buscar Produtos
+                    </button>
+                </div>
+                
+                <div className="row stats mb-4">
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card products position-relative">
+                            <div>
+                                <div className="number">{products.length}</div>
+                                <div className="label">Total de Produtos</div>
+                            </div>
+                            <i className="fas fa-box icon"></i>
+                        </div>
+                    </div>
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card inputs position-relative">
+                            <div>
+                                <div className="number">{stats && stats.totalEntradas ? stats.totalEntradas : 0}</div>
+                                <div className="label">Entradas</div>
+                            </div>
+                            <i className="fas fa-arrow-circle-down icon"></i>
+                        </div>
+                    </div>
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card outputs position-relative">
+                            <div>
+                                <div className="number">{stats && stats.totalSaidas ? stats.totalSaidas : 0}</div>
+                                <div className="label">Saídas</div>
+                            </div>
+                            <i className="fas fa-arrow-circle-up icon"></i>
+                        </div>
+                    </div>
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card balance position-relative">
+                            <div>
+                                <div className="number">R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div className="label">Valor Total em Estoque</div>
+                            </div>
+                            <i className="fas fa-dollar-sign icon"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="row mt-4">
+                    <div className="col-md-6">
+                        <div className="card">
+                            <div className="card-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                                <h5 className="card-title mb-0">Produtos</h5>
+                                <div className="d-flex align-items-center w-100 w-md-auto">
+                                    <div className="input-group">
+                                        <span className="input-group-text">
+                                            <i className="fas fa-search"></i>
+                                        </span>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Buscar produtos..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                    <span className="badge bg-primary ms-2">{filteredProducts.length}</span>
+                                </div>
+                            </div>
+                            <div className="card-body p-0">
+                                <div className="product-list">
+                                    {filteredProducts.map(product => (
+                                        <div key={product.id} className="product-item p-3 border-bottom">
+                                            <div className="d-flex justify-content-between align-items-start">
+                                                <div className="product-info">
+                                                    <h6 className="mb-1">{product.name}</h6>
+                                                    <span className="badge bg-secondary mb-2">{product.category}</span>
+                                                    <div className="product-details">
+                                                        <div className="mb-1">
+                                                            <strong>Preço:</strong> R$ {parseFloat(product.price).toFixed(2)}
+                                                        </div>
+                                                        <div className="d-flex align-items-center">
+                                                            <strong>Estoque:</strong>
+                                                            <span className={`badge ms-2 bg-${product.quantity > 10 ? 'success' : product.quantity > 5 ? 'warning' : 'danger'}`}>
+                                                                {product.quantity} unidades
+                                                            </span>
+                                                        </div>
+                                                        {product.quantity <= 5 && (
+                                                            <div className="text-danger mt-1">
+                                                                <i className="fas fa-exclamation-triangle me-1"></i>
+                                                                Estoque Baixo
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="product-actions d-flex flex-column gap-2">
+                                                    <button 
+                                                        className="btn btn-primary btn-sm"
+                                                        onClick={() => {
+                                                            setSelectedProduct(product);
+                                                            setShowProductModal(true);
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-edit me-1"></i>
+                                                        Editar
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-danger btn-sm"
+                                                        onClick={() => handleDeleteProduct(product.id)}
+                                                    >
+                                                        <i className="fas fa-trash me-1"></i>
+                                                        Excluir
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {filteredProducts.length === 0 && (
+                                        <div className="text-center p-4">
+                                            <i className="fas fa-box fa-3x text-muted mb-3 d-block"></i>
+                                            <p className="text-muted">Nenhum produto encontrado</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-md-6">
+                        <div className="card">
+                            <div className="card-header d-flex justify-content-between align-items-center">
+                                <h5 className="card-title mb-0">Últimas Movimentações</h5>
+                                <span className="badge bg-secondary">{movements.length} movimentações</span>
+                            </div>
+                            <div className="card-body">
+                                <div className="table-responsive">
+                                    <table className="table">
+                                        <thead>
+                                            <tr>
+                                                <th>Produto</th>
+                                                <th>Tipo</th>
+                                                <th>Quantidade</th>
+                                                <th>Data</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {movements.map(movement => (
+                                                <tr key={movement.id}>
+                                                    <td>
+                                                        <div>
+                                                            <strong>{movement.product.name}</strong>
+                                                            <small className="d-block text-muted">{movement.product.category}</small>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <span className={`badge bg-${movement.type === 'entrada' ? 'success' : 'danger'}`}>
+                                                            {movement.type === 'entrada' ? 'Entrada' : 'Saída'}
+                                                        </span>
+                                                    </td>
+                                                    <td>{movement.quantity}</td>
+                                                    <td>
+                                                        <div>
+                                                            {new Date(movement.createdAt).toLocaleDateString()}
+                                                            <small className="d-block text-muted">
+                                                                {new Date(movement.createdAt).toLocaleTimeString()}
+                                                            </small>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderContent = () => {
         switch (currentPage) {
             case 'search':
@@ -648,215 +997,15 @@ const Dashboard = () => {
             default:
                 return (
                     <div className="container-fluid py-4">
-                        <div className="d-flex flex-wrap gap-2 mb-4">
-                            <button 
-                                className="btn btn-info" 
-                                onClick={() => setShowCategoryModal(true)}
-                            >
-                                <i className="fas fa-tags me-2"></i>
-                                Gerenciar Categorias
-                            </button>
-                            <button 
-                                className="btn btn-primary" 
-                                onClick={() => {
-                                    setSelectedProduct(null);
-                                    setShowProductModal(true);
-                                }}
-                            >
-                                <i className="fas fa-plus me-2"></i>
-                                Novo Produto
-                            </button>
-                            <button 
-                                className="btn btn-success" 
-                                onClick={() => setShowMovementModal(true)}
-                            >
-                                <i className="fas fa-exchange-alt me-2"></i>
-                                Nova Movimentação
-                            </button>
-                            <button 
-                                className="btn btn-secondary" 
-                                onClick={() => {
-                                    window.history.pushState({}, '', '/buscar');
-                                    setCurrentPage('search');
-                                }}
-                            >
-                                <i className="fas fa-search me-2"></i>
-                                Buscar Produtos
-                            </button>
-                        </div>
-                        
-                        <div className="row stats mb-4">
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card products position-relative">
-                                    <div>
-                                        <div className="number">{products.length}</div>
-                                        <div className="label">Total de Produtos</div>
-                                    </div>
-                                    <i className="fas fa-box icon"></i>
-                                </div>
-                            </div>
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card inputs position-relative">
-                                    <div>
-                                        <div className="number">{stats && stats.totalEntradas ? stats.totalEntradas : 0}</div>
-                                        <div className="label">Entradas</div>
-                                    </div>
-                                    <i className="fas fa-arrow-circle-down icon"></i>
-                                </div>
-                            </div>
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card outputs position-relative">
-                                    <div>
-                                        <div className="number">{stats && stats.totalSaidas ? stats.totalSaidas : 0}</div>
-                                        <div className="label">Saídas</div>
-                                    </div>
-                                    <i className="fas fa-arrow-circle-up icon"></i>
-                                </div>
-                            </div>
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card balance position-relative">
-                                    <div>
-                                        <div className="number">{stats ? (stats.quantidadeTotalEntrada - stats.quantidadeTotalSaida) : 0}</div>
-                                        <div className="label">Saldo Total</div>
-                                    </div>
-                                    <i className="fas fa-dollar-sign icon"></i>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="row mt-4">
-                            <div className="col-md-6">
-                                <div className="card">
-                                    <div className="card-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
-                                        <h5 className="card-title mb-0">Produtos</h5>
-                                        <div className="d-flex align-items-center w-100 w-md-auto">
-                                            <div className="input-group">
-                                                <span className="input-group-text">
-                                                    <i className="fas fa-search"></i>
-                                                </span>
-                                                <input
-                                                    type="text"
-                                                    className="form-control"
-                                                    placeholder="Buscar produtos..."
-                                                    value={searchTerm}
-                                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                                />
-                                            </div>
-                                            <span className="badge bg-primary ms-2">{filteredProducts.length}</span>
-                                        </div>
-                                    </div>
-                                    <div className="card-body p-0">
-                                        <div className="product-list">
-                                            {filteredProducts.map(product => (
-                                                <div key={product.id} className="product-item p-3 border-bottom">
-                                                    <div className="d-flex justify-content-between align-items-start">
-                                                        <div className="product-info">
-                                                            <h6 className="mb-1">{product.name}</h6>
-                                                            <span className="badge bg-secondary mb-2">{product.category}</span>
-                                                            <div className="product-details">
-                                                                <div className="mb-1">
-                                                                    <strong>Preço:</strong> R$ {parseFloat(product.price).toFixed(2)}
-                                                                </div>
-                                                                <div className="d-flex align-items-center">
-                                                                    <strong>Estoque:</strong>
-                                                                    <span className={`badge ms-2 bg-${product.quantity > 10 ? 'success' : product.quantity > 5 ? 'warning' : 'danger'}`}>
-                                                                        {product.quantity} unidades
-                                                                    </span>
-                                                                </div>
-                                                                {product.quantity <= 5 && (
-                                                                    <div className="text-danger mt-1">
-                                                                        <i className="fas fa-exclamation-triangle me-1"></i>
-                                                                        Estoque Baixo
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="product-actions d-flex flex-column gap-2">
-                                                            <button 
-                                                                className="btn btn-primary btn-sm"
-                                                                onClick={() => {
-                                                                    setSelectedProduct(product);
-                                                                    setShowProductModal(true);
-                                                                }}
-                                                            >
-                                                                <i className="fas fa-edit me-1"></i>
-                                                                Editar
-                                                            </button>
-                                                            <button 
-                                                                className="btn btn-danger btn-sm"
-                                                                onClick={() => handleDeleteProduct(product.id)}
-                                                            >
-                                                                <i className="fas fa-trash me-1"></i>
-                                                                Excluir
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            {filteredProducts.length === 0 && (
-                                                <div className="text-center p-4">
-                                                    <i className="fas fa-box fa-3x text-muted mb-3 d-block"></i>
-                                                    <p className="text-muted">Nenhum produto encontrado</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="col-md-6">
-                                <div className="card">
-                                    <div className="card-header d-flex justify-content-between align-items-center">
-                                        <h5 className="card-title mb-0">Últimas Movimentações</h5>
-                                        <span className="badge bg-secondary">{movements.length} movimentações</span>
-                                    </div>
-                                    <div className="card-body">
-                                        <div className="table-responsive">
-                                            <table className="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Produto</th>
-                                                        <th>Tipo</th>
-                                                        <th>Quantidade</th>
-                                                        <th>Data</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {movements.map(movement => (
-                                                        <tr key={movement.id}>
-                                                            <td>
-                                                                <div>
-                                                                    <strong>{movement.product.name}</strong>
-                                                                    <small className="d-block text-muted">{movement.product.category}</small>
-                                                                </div>
-                                                            </td>
-                                                            <td>
-                                                                <span className={`badge bg-${movement.type === 'entrada' ? 'success' : 'danger'}`}>
-                                                                    {movement.type === 'entrada' ? 'Entrada' : 'Saída'}
-                                                                </span>
-                                                            </td>
-                                                            <td>{movement.quantity}</td>
-                                                            <td>
-                                                                <div>
-                                                                    {new Date(movement.createdAt).toLocaleDateString()}
-                                                                    <small className="d-block text-muted">
-                                                                        {new Date(movement.createdAt).toLocaleTimeString()}
-                                                                    </small>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        {user && user.isAdmin ? renderAdminPanel() : renderRegularDashboard()}
                     </div>
                 );
         }
     };
+
+    if (loading) {
+        return <div className="spinner-overlay"><div className="spinner-border text-primary"></div></div>;
+    }
 
     return (
         <React.Fragment>
@@ -887,7 +1036,7 @@ const Dashboard = () => {
 
 // Main App Component
 const App = () => {
-    const { token, logout } = useContext(AuthContext);
+    const { token, user, logout } = useContext(AuthContext);
     const [currentPage, setCurrentPage] = useState('dashboard');
 
     useEffect(() => {
@@ -896,6 +1045,10 @@ const App = () => {
             setCurrentPage('search');
         }
     }, []);
+
+    if (!token) {
+        return <Login />;
+    }
 
     return (
         <div>
@@ -907,25 +1060,30 @@ const App = () => {
                             <span style={{ marginLeft: '8px', fontWeight: '400' }}>Estoque</span>
                         </span>
                     </a>
-                    {token && (
-                        <div className="d-flex gap-2">
+                    <div className="d-flex gap-2">
+                        {user && user.isAdmin && (
                             <button 
                                 className="btn btn-outline-light" 
-                                onClick={logout}
+                                onClick={() => setCurrentPage('admin')}
                             >
-                                <i className="fas fa-sign-out-alt me-2"></i>
-                                Sair
+                                <i className="fas fa-users-cog me-2"></i>
+                                Painel Admin
                             </button>
-                        </div>
-                    )}
+                        )}
+                        <button 
+                            className="btn btn-outline-light" 
+                            onClick={logout}
+                        >
+                            <i className="fas fa-sign-out-alt me-2"></i>
+                            Sair
+                        </button>
+                    </div>
                 </div>
             </nav>
-            {token ? (
-                <React.Fragment>
-                    <Dashboard />
-                </React.Fragment>
+            {user && user.isAdmin && currentPage === 'admin' ? (
+                <Dashboard />
             ) : (
-                <Login />
+                <Dashboard />
             )}
         </div>
     );
