@@ -47,12 +47,11 @@ const AuthProvider = ({ children }) => {
             const response = await axios.post('/auth/login', { email, password });
             
             if (!response.data || !response.data.token) {
-                throw new Error('Resposta inválida do servidor');
+                throw new Error('Dados de autenticação inválidos');
             }
 
             const { token: newToken, user: userData } = response.data;
             
-            // Criar objeto de usuário com os dados completos
             const userObject = {
                 id: userData.id,
                 email: userData.email,
@@ -63,13 +62,13 @@ const AuthProvider = ({ children }) => {
                 isBlocked: userData.isBlocked
             };
 
-            // Verificar as condições de acesso
+            // Verificações de status do usuário com mensagens mais amigáveis
             if (!userObject.isApproved && !userObject.isAdmin) {
-                throw new Error('Sua conta está aguardando aprovação do administrador.');
+                throw new Error('Sua conta ainda está em análise. Por favor, aguarde a aprovação do administrador.');
             }
 
             if (userObject.isBlocked) {
-                throw new Error('Sua conta está bloqueada. Entre em contato com o administrador.');
+                throw new Error('Sua conta está temporariamente bloqueada. Entre em contato com o administrador para mais informações.');
             }
 
             setToken(newToken);
@@ -77,14 +76,32 @@ const AuthProvider = ({ children }) => {
             localStorage.setItem('token', newToken);
             localStorage.setItem('userData', JSON.stringify(userObject));
             
-            // Configure axios defaults
             axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
             
             return userObject;
         } catch (error) {
-            const errorMessage = error.response && error.response.data && error.response.data.message 
-                ? error.response.data.message 
-                : error.message || 'Erro ao fazer login';
+            let errorMessage;
+            
+            if (error.response) {
+                // Erros específicos do servidor
+                switch (error.response.status) {
+                    case 401:
+                        errorMessage = 'Email ou senha incorretos. Por favor, verifique suas credenciais.';
+                        break;
+                    case 403:
+                        errorMessage = error.response.data.message || 'Acesso não autorizado. Verifique o status da sua conta.';
+                        break;
+                    default:
+                        errorMessage = error.response.data.message || 'Ocorreu um erro durante o login. Tente novamente.';
+                }
+            } else if (error.message) {
+                // Erros personalizados ou de validação
+                errorMessage = error.message;
+            } else {
+                // Erro genérico
+                errorMessage = 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.';
+            }
+            
             throw new Error(errorMessage);
         }
     };
@@ -109,8 +126,7 @@ const AuthProvider = ({ children }) => {
 };
 
 // Register Component
-const Register = () => {
-    const { login } = useContext(AuthContext);
+const Register = ({ setShowRegister }) => {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -118,76 +134,172 @@ const Register = () => {
         company: ''
     });
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setLoading(true);
+        setError('');
+
         try {
-            const response = await axios.post('/auth/register', formData);
-            login(response.data.token, response.data.user);
+            await axios.post('/auth/register', formData);
+            setRegistrationSuccess(true);
         } catch (error) {
-            setError(error.response && error.response.data && error.response.data.message 
+            const errorMessage = error.response && error.response.data && error.response.data.message 
                 ? error.response.data.message 
-                : 'Erro ao registrar usuário');
+                : 'Erro ao registrar usuário. Por favor, tente novamente.';
+            setError(errorMessage);
+        } finally {
+            setLoading(false);
         }
     };
 
-    return (
-        <div className="container mt-5">
-            <div className="row justify-content-center">
-                <div className="col-md-6">
-                    <div className="card">
-                        <div className="card-body">
-                            <h3 className="card-title text-center mb-4">Registro</h3>
-                            {error && <div className="alert alert-danger">{error}</div>}
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-3">
-                                    <label className="form-label">Nome</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Email</label>
-                                    <input
-                                        type="email"
-                                        className="form-control"
-                                        value={formData.email}
-                                        onChange={(e) => setFormData({...formData, email: e.target.value})}
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Senha</label>
-                                    <input
-                                        type="password"
-                                        className="form-control"
-                                        value={formData.password}
-                                        onChange={(e) => setFormData({...formData, password: e.target.value})}
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Empresa</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        value={formData.company}
-                                        onChange={(e) => setFormData({...formData, company: e.target.value})}
-                                        required
-                                    />
-                                </div>
-                                <button type="submit" className="btn btn-primary w-100">Registrar</button>
-                            </form>
-                            <div className="text-center mt-3">
-                                <a href="#" onClick={(e) => {
-                                    e.preventDefault();
-                                    setShowRegister(false);
-                                }}>Já tem uma conta? Faça login</a>
+    if (registrationSuccess) {
+        return (
+            <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
+                <div className="container">
+                    <div className="row justify-content-center">
+                        <div className="col-md-6">
+                            <div className="text-center mb-4">
+                                <h1 className="display-4 fw-bold text-primary mb-0" style={{ letterSpacing: '0.5px' }}>
+                                    C<span style={{ fontSize: '0.8em' }}>&</span>D
+                                </h1>
+                                <h2 className="h4 text-muted mt-2">Estoque</h2>
                             </div>
+
+                            <div className="card shadow-sm border-0">
+                                <div className="card-body p-4 text-center">
+                                    <i className="fas fa-check-circle text-success mb-3" style={{ fontSize: '4rem' }}></i>
+                                    <h3 className="mb-3">Registro Realizado com Sucesso!</h3>
+                                    <p className="text-muted mb-4">
+                                        Sua conta foi criada e está aguardando aprovação do administrador. 
+                                        Você receberá uma notificação quando sua conta for aprovada.
+                                    </p>
+                                    <button 
+                                        className="btn btn-primary"
+                                        onClick={() => setShowRegister(false)}
+                                    >
+                                        <i className="fas fa-sign-in-alt me-2"></i>
+                                        Voltar para Login
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
+            <div className="container">
+                <div className="row justify-content-center">
+                    <div className="col-md-6">
+                        <div className="text-center mb-4">
+                            <h1 className="display-4 fw-bold text-primary mb-0" style={{ letterSpacing: '0.5px' }}>
+                                C<span style={{ fontSize: '0.8em' }}>&</span>D
+                            </h1>
+                            <h2 className="h4 text-muted mt-2">Estoque</h2>
+                            <p className="text-muted">Sistema de Gestão de Estoque</p>
+                        </div>
+
+                        <div className="card shadow-sm border-0">
+                            <div className="card-body p-4">
+                                <h3 className="text-center mb-4 fw-normal">Criar Conta</h3>
+
+                                {error && (
+                                    <div className="alert alert-danger alert-dismissible fade show" role="alert">
+                                        <i className="fas fa-exclamation-circle me-2"></i>
+                                        {error}
+                                        <button type="button" className="btn-close" onClick={() => setError('')}></button>
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleSubmit}>
+                                    <div className="form-floating mb-3">
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            id="name"
+                                            placeholder="Seu nome"
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                                            required
+                                        />
+                                        <label htmlFor="name">Nome</label>
+                                    </div>
+
+                                    <div className="form-floating mb-3">
+                                        <input
+                                            type="email"
+                                            className="form-control"
+                                            id="email"
+                                            placeholder="nome@exemplo.com"
+                                            value={formData.email}
+                                            onChange={(e) => setFormData({...formData, email: e.target.value})}
+                                            required
+                                        />
+                                        <label htmlFor="email">Email</label>
+                                    </div>
+
+                                    <div className="form-floating mb-3">
+                                        <input
+                                            type="password"
+                                            className="form-control"
+                                            id="password"
+                                            placeholder="Senha"
+                                            value={formData.password}
+                                            onChange={(e) => setFormData({...formData, password: e.target.value})}
+                                            required
+                                        />
+                                        <label htmlFor="password">Senha</label>
+                                    </div>
+
+                                    <div className="form-floating mb-4">
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            id="company"
+                                            placeholder="Nome da empresa"
+                                            value={formData.company}
+                                            onChange={(e) => setFormData({...formData, company: e.target.value})}
+                                            required
+                                        />
+                                        <label htmlFor="company">Empresa</label>
+                                    </div>
+
+                                    <button 
+                                        type="submit" 
+                                        className="btn btn-primary w-100 py-2 mb-3"
+                                        disabled={loading}
+                                    >
+                                        {loading ? (
+                                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        ) : (
+                                            <i className="fas fa-user-plus me-2"></i>
+                                        )}
+                                        Criar Conta
+                                    </button>
+
+                                    <div className="text-center">
+                                        <button 
+                                            type="button" 
+                                            className="btn btn-link text-decoration-none"
+                                            onClick={() => setShowRegister(false)}
+                                        >
+                                            Já tem uma conta? Faça login
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div className="text-center mt-4">
+                            <small className="text-muted">
+                                &copy; {new Date().getFullYear()} C&D Estoque. Todos os direitos reservados.
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -205,6 +317,7 @@ const Login = () => {
     });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showRegister, setShowRegister] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -212,66 +325,108 @@ const Login = () => {
         setLoading(true);
 
         try {
-            // Fazer login usando a função do AuthContext
             await login(formData.email, formData.password);
         } catch (error) {
             console.error('Login error:', error);
-            const errorMessage = error.response && error.response.data && error.response.data.message 
-                ? error.response.data.message 
-                : 'Erro ao fazer login. Por favor, tente novamente.';
-            setError(errorMessage);
+            setError(error.message || 'Ocorreu um erro durante o login. Por favor, tente novamente.');
         } finally {
             setLoading(false);
         }
     };
 
+    if (showRegister) {
+        return <Register setShowRegister={setShowRegister} />;
+    }
+
     return (
-        <div className="container mt-5">
-            <div className="row justify-content-center">
-                <div className="col-md-6 col-lg-4">
-                    <div className="card shadow">
-                        <div className="card-body">
-                            <h2 className="text-center mb-4">Login</h2>
-                            {error && (
-                                <div className="alert alert-danger alert-dismissible fade show" role="alert">
-                                    {error}
-                                    <button type="button" className="btn-close" onClick={() => setError('')}></button>
-                                </div>
-                            )}
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-3">
-                                    <label htmlFor="email" className="form-label">Email</label>
-                                    <input
-                                        type="email"
-                                        className="form-control"
-                                        id="email"
-                                        value={formData.email}
-                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <label htmlFor="password" className="form-label">Senha</label>
-                                    <input
-                                        type="password"
-                                        className="form-control"
-                                        id="password"
-                                        value={formData.password}
-                                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                        required
-                                    />
-                                </div>
-                                <button 
-                                    type="submit" 
-                                    className="btn btn-primary w-100"
-                                    disabled={loading}
-                                >
-                                    {loading ? (
-                                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                    ) : null}
-                                    Entrar
-                                </button>
-                            </form>
+        <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
+            <div className="container">
+                <div className="row justify-content-center">
+                    <div className="col-md-6 col-lg-4">
+                        <div className="text-center mb-4">
+                            <h1 className="display-4 fw-bold text-primary mb-0" style={{ letterSpacing: '0.5px' }}>
+                                C<span style={{ fontSize: '0.8em' }}>&</span>D
+                            </h1>
+                            <h2 className="h4 text-muted mt-2">Estoque</h2>
+                            <p className="text-muted">Sistema de Gestão de Estoque</p>
+                        </div>
+                        
+                        <div className="card shadow-sm border-0">
+                            <div className="card-body p-4">
+                                <h3 className="text-center mb-4 fw-normal">Login</h3>
+                                
+                                {error && (
+                                    <div className="alert alert-danger alert-dismissible fade show" role="alert">
+                                        <div className="d-flex align-items-center">
+                                            <i className="fas fa-exclamation-circle me-2"></i>
+                                            <div className="flex-grow-1">{error}</div>
+                                        </div>
+                                        <button 
+                                            type="button" 
+                                            className="btn-close" 
+                                            onClick={() => setError('')}
+                                            aria-label="Fechar"
+                                        ></button>
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleSubmit}>
+                                    <div className="form-floating mb-3">
+                                        <input
+                                            type="email"
+                                            className="form-control"
+                                            id="email"
+                                            placeholder="nome@exemplo.com"
+                                            value={formData.email}
+                                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                            required
+                                        />
+                                        <label htmlFor="email">Email</label>
+                                    </div>
+
+                                    <div className="form-floating mb-4">
+                                        <input
+                                            type="password"
+                                            className="form-control"
+                                            id="password"
+                                            placeholder="Senha"
+                                            value={formData.password}
+                                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                            required
+                                        />
+                                        <label htmlFor="password">Senha</label>
+                                    </div>
+
+                                    <button 
+                                        type="submit" 
+                                        className="btn btn-primary w-100 py-2 mb-3"
+                                        disabled={loading}
+                                    >
+                                        {loading ? (
+                                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        ) : (
+                                            <i className="fas fa-sign-in-alt me-2"></i>
+                                        )}
+                                        {loading ? 'Entrando...' : 'Entrar'}
+                                    </button>
+
+                                    <div className="text-center">
+                                        <button 
+                                            type="button" 
+                                            className="btn btn-link text-decoration-none"
+                                            onClick={() => setShowRegister(true)}
+                                        >
+                                            Não tem uma conta? Registre-se
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        
+                        <div className="text-center mt-4">
+                            <small className="text-muted">
+                                &copy; {new Date().getFullYear()} C&D Estoque. Todos os direitos reservados.
+                            </small>
                         </div>
                     </div>
                 </div>
