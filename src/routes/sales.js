@@ -196,10 +196,14 @@ router.post('/', [
 
 // Cancelar venda
 router.put('/:id/cancel', auth, async (req, res) => {
+    console.log(`Recebido pedido de cancelamento para venda ID: ${req.params.id}`);
+    console.log('Usuário requisitando:', req.user.userId);
+    
     // Iniciar transação
     const result = await prisma.$transaction(async (prisma) => {
         try {
             const id = parseInt(req.params.id);
+            console.log(`ID após conversão: ${id}`);
             
             // Verificar se a venda pertence ao usuário e está ativa
             const sale = await prisma.sale.findFirst({
@@ -212,6 +216,8 @@ router.put('/:id/cancel', auth, async (req, res) => {
                     items: true
                 }
             });
+            
+            console.log('Venda encontrada:', sale ? 'Sim' : 'Não');
             
             if (!sale) {
                 throw { status: 404, message: 'Venda não encontrada ou já cancelada' };

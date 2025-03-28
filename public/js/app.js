@@ -837,6 +837,8 @@ const Dashboard = () => {
     const [clients, setClients] = useState([]);
     const [productSearchTerm, setProductSearchTerm] = useState('');
     const [filteredSaleProducts, setFilteredSaleProducts] = useState([]);
+    const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
+    const [saleToCancel, setSaleToCancel] = useState(null);
     // Novos estados para gerenciamento de clientes
     const [showClientOptionsModal, setShowClientOptionsModal] = useState(false);
     const [showClientsListModal, setShowClientsListModal] = useState(false);
@@ -850,6 +852,7 @@ const Dashboard = () => {
     const [includeReportDetails, setIncludeReportDetails] = useState(false);
     const [reportData, setReportData] = useState([]);
     const [clientSearchReport, setClientSearchReport] = useState('');
+    const [showSalesSearch, setShowSalesSearch] = useState(false);
 
     const fetchData = async () => {
         if (!token) {
@@ -1139,13 +1142,69 @@ const Dashboard = () => {
 
     const viewSaleReceipt = async (saleId) => {
         try {
-            setLoading(true);
             const response = await axios.get(`/sales/${saleId}`);
             setSelectedSale(response.data);
             setShowReceiptModal(true);
         } catch (error) {
-            console.error('Erro ao buscar detalhes da venda:', error);
+            console.error('Erro ao buscar venda:', error);
             setError('Erro ao buscar detalhes da venda');
+        }
+    };
+
+    const showCancelSaleModal = (sale) => {
+        setSaleToCancel(sale);
+        setShowCancelConfirmModal(true);
+    };
+
+    const cancelSale = async () => {
+        if (!saleToCancel) return;
+        
+        try {
+            setLoading(true);
+            const cancelId = saleToCancel.id;
+            console.log(`Tentando cancelar venda ID: ${cancelId}`);
+            
+            const response = await axios.put(`/sales/${cancelId}/cancel`);
+            console.log('Resposta do cancelamento:', response.data);
+            
+            // Atualizar a lista de produtos e vendas
+            await fetchData();
+            
+            // Fechar o modal de confirmação
+            setShowCancelConfirmModal(false);
+            setSaleToCancel(null);
+            
+            // Exibir mensagem de sucesso
+            setSuccessMessage('Venda cancelada com sucesso! Os produtos foram devolvidos ao estoque.');
+            setTimeout(() => setSuccessMessage(''), 3000);
+            
+        } catch (error) {
+            console.error('Erro ao cancelar venda:', error);
+            
+            let errorMessage = 'Erro ao cancelar venda. Por favor, tente novamente.';
+            
+            if (error.response) {
+                console.error('Detalhes da resposta:', error.response.data);
+                console.error('Status:', error.response.status);
+                console.error('Headers:', error.response.headers);
+                
+                // Verificar se é um erro de venda já cancelada
+                if (error.response.status === 404 && 
+                    error.response.data.message && 
+                    error.response.data.message.includes('já cancelada')) {
+                    errorMessage = 'Esta venda já foi cancelada anteriormente. A lista será atualizada.';
+                    
+                    // Mesmo com erro, atualizar a lista para mostrar o status correto
+                    await fetchData();
+                    
+                    // Fechar o modal de confirmação
+                    setShowCancelConfirmModal(false);
+                    setSaleToCancel(null);
+                }
+            }
+            
+            setError(errorMessage);
+            setTimeout(() => setError(''), 3000);
         } finally {
             setLoading(false);
         }
@@ -1153,174 +1212,174 @@ const Dashboard = () => {
 
     // Funções para relatórios
     const generateReport = async () => {
+        // Validar datas
         if (!reportStartDate || !reportEndDate) {
-            setError('Selecione as datas inicial e final para gerar o relatório.');
-            setTimeout(() => setError(''), 3000);
+            setError('Selecione as datas de início e fim para gerar o relatório');
             return;
         }
-        
-        setLoading(true);
-        setReportData([]);
-        
+
         try {
-            let endpoint = '';
-            let params = {
-                startDate: reportStartDate,
-                endDate: reportEndDate,
-                includeDetails: includeReportDetails
-            };
-            
+            setLoading(true);
+            setReportData([]);
+
+            const start = new Date(reportStartDate);
+            const end = new Date(reportEndDate);
+            end.setHours(23, 59, 59); // Incluir todo o último dia
+
+            if (start > end) {
+                setError('A data inicial deve ser anterior à data final');
+                return;
+            }
+
+            // Simular busca de dados da API com base no tipo de relatório
+            let data = [];
+
             switch (reportType) {
                 case 'sales':
-                    endpoint = '/reports/sales';
+                    // Obter vendas do período
+                    const salesResponse = await axios.get('/sales');
+                    const allSales = salesResponse.data;
+                    
+                    // Filtrar pelo período
+                    data = allSales.filter(sale => {
+                        const saleDate = new Date(sale.createdAt || sale.created_at);
+                        return saleDate >= start && saleDate <= end;
+                    });
+                    
+                    // Filtrar por cliente, se tiver termo de busca
+                    if (clientSearchReport.trim()) {
+                        data = data.filter(sale => 
+                            sale.client && 
+                            sale.client.name && 
+                            sale.client.name.toLowerCase().includes(clientSearchReport.toLowerCase())
+                        );
+                    }
+                    
+                    // Verificar se há dados após a filtragem
+                    if (data.length === 0) {
+                        setError('Nenhuma venda encontrada para o período selecionado');
+                        return;
+                    }
+                    
                     break;
                 case 'inventory':
-                    endpoint = '/reports/inventory';
+                    // Simulando relatório de movimentações
+                    data = movements
+                        .filter(movement => {
+                            const movDate = new Date(movement.createdAt);
+                            return movDate >= start && movDate <= end;
+                        })
+                        .map(movement => ({
+                            id: movement.id,
+                            date: new Date(movement.createdAt).toLocaleString(),
+                            product: movement.product ? movement.product.name : 'Produto não encontrado',
+                            quantity: movement.quantity,
+                            type: movement.type === 'in' ? 'Entrada' : 'Saída',
+                            reason: movement.reason || '-'
+                        }));
                     break;
                 case 'bestsellers':
-                    endpoint = '/reports/bestsellers';
-                    break;
-                case 'financial':
-                    endpoint = '/reports/financial';
-                    break;
-                default:
-                    endpoint = '/reports/sales';
-            }
-            
-            // Simulando dados de relatório (remover quando a API estiver pronta)
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            let simulatedData = [];
-            const startDate = new Date(reportStartDate);
-            const endDate = new Date(reportEndDate);
-            
-            if (reportType === 'sales') {
-                // Simulando relatório de vendas
-                simulatedData = sales
-                    .filter(sale => {
-                        const saleDate = new Date(sale.createdAt);
-                        return saleDate >= startDate && saleDate <= endDate;
-                    })
-                    .map(sale => ({
-                        id: sale.id,
-                        date: new Date(sale.createdAt).toLocaleString(),
-                        client: sale.client ? sale.client.name : 'Cliente não informado',
-                        total: parseFloat(sale.total),
-                        payment: sale.paymentMethod
-                    }));
-            } else if (reportType === 'inventory') {
-                // Simulando relatório de movimentações
-                simulatedData = movements
-                    .filter(movement => {
-                        const movDate = new Date(movement.createdAt);
-                        return movDate >= startDate && movDate <= endDate;
-                    })
-                    .map(movement => ({
-                        id: movement.id,
-                        date: new Date(movement.createdAt).toLocaleString(),
-                        product: movement.product ? movement.product.name : 'Produto não encontrado',
-                        quantity: movement.quantity,
-                        type: movement.type === 'in' ? 'Entrada' : 'Saída',
-                        reason: movement.reason || '-'
-                    }));
-            } else if (reportType === 'bestsellers') {
-                // Simulando relatório de produtos mais vendidos
-                const productSales = {};
-                
-                // Contabilizar vendas por produto
-                sales
-                    .filter(sale => {
-                        const saleDate = new Date(sale.createdAt);
-                        return saleDate >= startDate && saleDate <= endDate;
-                    })
-                    .forEach(sale => {
-                        sale.items.forEach(item => {
-                            const productId = item.productId;
-                            const productName = item.product ? item.product.name : 'Produto não encontrado';
-                            const quantity = item.quantity;
-                            const total = item.price * quantity;
-                            
-                            if (!productSales[productId]) {
-                                productSales[productId] = {
-                                    name: productName,
-                                    quantity: 0,
-                                    total: 0
-                                };
-                            }
-                            
-                            productSales[productId].quantity += quantity;
-                            productSales[productId].total += total;
-                        });
-                    });
-                
-                // Converter para array e ordenar
-                simulatedData = Object.keys(productSales).map(productId => ({
-                    id: productId,
-                    name: productSales[productId].name,
-                    quantity: productSales[productId].quantity,
-                    total: productSales[productId].total
-                })).sort((a, b) => b.quantity - a.quantity);
-                
-                // Adicionar ranking
-                simulatedData = simulatedData.map((item, index) => ({
-                    ...item,
-                    ranking: index + 1
-                }));
-            } else if (reportType === 'financial') {
-                // Simulando relatório financeiro
-                let totalSales = 0;
-                let totalByMethod = {
-                    dinheiro: 0,
-                    cartao_credito: 0,
-                    cartao_debito: 0,
-                    pix: 0,
-                    crediario: 0
-                };
-                
-                sales
-                    .filter(sale => {
-                        const saleDate = new Date(sale.createdAt);
-                        return saleDate >= startDate && saleDate <= endDate;
-                    })
-                    .forEach(sale => {
-                        const total = parseFloat(sale.total);
-                        totalSales += total;
-                        
-                        if (sale.paymentMethod && totalByMethod[sale.paymentMethod] !== undefined) {
-                            totalByMethod[sale.paymentMethod] += total;
-                        }
-                    });
-                
-                simulatedData = [
-                    { category: 'Total de Vendas', value: totalSales.toFixed(2), percentage: '100%' },
-                    { category: 'Dinheiro', value: totalByMethod.dinheiro.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.dinheiro / totalSales) * 100).toFixed(1)}%` : '0%' },
-                    { category: 'Cartão de Crédito', value: totalByMethod.cartao_credito.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.cartao_credito / totalSales) * 100).toFixed(1)}%` : '0%' },
-                    { category: 'Cartão de Débito', value: totalByMethod.cartao_debito.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.cartao_debito / totalSales) * 100).toFixed(1)}%` : '0%' },
-                    { category: 'PIX', value: totalByMethod.pix.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.pix / totalSales) * 100).toFixed(1)}%` : '0%' },
-                    { category: 'Crediário', value: totalByMethod.crediario.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.crediario / totalSales) * 100).toFixed(1)}%` : '0%' }
-                ];
-                
-                // Se incluir detalhes, adicionar as vendas no relatório
-                if (includeReportDetails) {
-                    const detailedSales = sales
+                    // Simulando relatório de produtos mais vendidos
+                    const productSales = {};
+                    
+                    // Contabilizar vendas por produto
+                    sales
                         .filter(sale => {
                             const saleDate = new Date(sale.createdAt);
-                            return saleDate >= startDate && saleDate <= endDate;
+                            return saleDate >= start && saleDate <= end;
                         })
-                        .map(sale => ({
-                            id: sale.id,
-                            date: new Date(sale.createdAt).toLocaleString(),
-                            client: sale.client ? sale.client.name : 'Cliente não informado',
-                            total: parseFloat(sale.total),
-                            payment: sale.paymentMethod
-                        }));
+                        .forEach(sale => {
+                            sale.items.forEach(item => {
+                                const productId = item.productId;
+                                const productName = item.product ? item.product.name : 'Produto não encontrado';
+                                const quantity = item.quantity;
+                                const total = item.price * quantity;
+                                
+                                if (!productSales[productId]) {
+                                    productSales[productId] = {
+                                        name: productName,
+                                        quantity: 0,
+                                        total: 0
+                                    };
+                                }
+                                
+                                productSales[productId].quantity += quantity;
+                                productSales[productId].total += total;
+                            });
+                        });
                     
-                    simulatedData.push({ category: 'Detalhes de Vendas', isHeader: true });
-                    simulatedData = [...simulatedData, ...detailedSales];
-                }
+                    // Converter para array e ordenar
+                    data = Object.keys(productSales).map(productId => ({
+                        id: productId,
+                        name: productSales[productId].name,
+                        quantity: productSales[productId].quantity,
+                        total: productSales[productId].total
+                    })).sort((a, b) => b.quantity - a.quantity);
+                    
+                    // Adicionar ranking
+                    data = data.map((item, index) => ({
+                        ...item,
+                        ranking: index + 1
+                    }));
+                    break;
+                case 'financial':
+                    // Simulando relatório financeiro
+                    let totalSales = 0;
+                    let totalByMethod = {
+                        dinheiro: 0,
+                        cartao_credito: 0,
+                        cartao_debito: 0,
+                        pix: 0,
+                        crediario: 0
+                    };
+                    
+                    sales
+                        .filter(sale => {
+                            const saleDate = new Date(sale.createdAt);
+                            return saleDate >= start && saleDate <= end;
+                        })
+                        .forEach(sale => {
+                            const total = parseFloat(sale.total);
+                            totalSales += total;
+                            
+                            if (sale.paymentMethod && totalByMethod[sale.paymentMethod] !== undefined) {
+                                totalByMethod[sale.paymentMethod] += total;
+                            }
+                        });
+                    
+                    data = [
+                        { category: 'Total de Vendas', value: totalSales.toFixed(2), percentage: '100%' },
+                        { category: 'Dinheiro', value: totalByMethod.dinheiro.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.dinheiro / totalSales) * 100).toFixed(1)}%` : '0%' },
+                        { category: 'Cartão de Crédito', value: totalByMethod.cartao_credito.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.cartao_credito / totalSales) * 100).toFixed(1)}%` : '0%' },
+                        { category: 'Cartão de Débito', value: totalByMethod.cartao_debito.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.cartao_debito / totalSales) * 100).toFixed(1)}%` : '0%' },
+                        { category: 'PIX', value: totalByMethod.pix.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.pix / totalSales) * 100).toFixed(1)}%` : '0%' },
+                        { category: 'Crediário', value: totalByMethod.crediario.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.crediario / totalSales) * 100).toFixed(1)}%` : '0%' }
+                    ];
+                    
+                    // Se incluir detalhes, adicionar as vendas no relatório
+                    if (includeReportDetails) {
+                        const detailedSales = sales
+                            .filter(sale => {
+                                const saleDate = new Date(sale.createdAt);
+                                return saleDate >= start && saleDate <= end;
+                            })
+                            .map(sale => ({
+                                id: sale.id,
+                                date: new Date(sale.createdAt).toLocaleString(),
+                                client: sale.client ? sale.client.name : 'Cliente não informado',
+                                total: parseFloat(sale.total),
+                                payment: sale.paymentMethod
+                            }));
+                        
+                        data.push({ category: 'Detalhes de Vendas', isHeader: true });
+                        data = [...data, ...detailedSales];
+                    }
+                    break;
+                default:
+                    break;
             }
             
-            setReportData(simulatedData);
+            setReportData(data);
             setSuccessMessage('Relatório gerado com sucesso!');
             setTimeout(() => setSuccessMessage(''), 3000);
             
@@ -1337,82 +1396,76 @@ const Dashboard = () => {
     };
     
     const renderReportTable = () => {
-        if (reportData.length === 0) return null;
+        if (!reportData.length) return null;
         
         switch (reportType) {
             case 'sales':
-                // Filtrar por cliente se houver busca
-                const filteredSales = clientSearchReport 
-                    ? reportData.filter(sale => 
-                        sale.client.toLowerCase().includes(clientSearchReport.toLowerCase()))
-                    : reportData;
-                
-                // Se não houver resultados após a filtragem
-                if (filteredSales.length === 0) {
-                    return (
-                        <div className="alert alert-info text-center">
-                            <i className="fas fa-info-circle me-2"></i>
-                            Nenhuma venda encontrada para o cliente "{clientSearchReport}".
-                        </div>
-                    );
-                }
+                // Filtrar vendas canceladas do cálculo do total
+                const activeReportSales = reportData.filter(sale => !(sale.status === 'cancelada' || sale.canceled));
+                const total = activeReportSales.reduce((acc, sale) => acc + parseFloat(sale.total), 0).toFixed(2);
                 
                 return (
-                    <div>
-                        {clientSearchReport && (
-                            <div className="alert alert-success mb-3">
-                                <i className="fas fa-filter me-2"></i>
-                                Mostrando {filteredSales.length} {filteredSales.length === 1 ? 'venda' : 'vendas'} para o cliente "{clientSearchReport}".
-                            </div>
-                        )}
-                        
-                        <table className="table table-striped table-hover">
-                            <thead className="table-light">
+                    <div className="table-responsive">
+                        <p><strong>Mostrando {reportData.length} vendas encontradas</strong></p>
+                        <table className="table table-hover">
+                            <thead>
                                 <tr>
                                     <th>#</th>
-                                    <th>Data</th>
-                                    <th>Cliente</th>
-                                    <th>Total</th>
-                                    <th>Pagamento</th>
-                                    <th>Ações</th>
+                                    <th>DATA</th>
+                                    <th>CLIENTE</th>
+                                    <th>TOTAL</th>
+                                    <th>PAGAMENTO</th>
+                                    <th>STATUS</th>
+                                    <th>AÇÕES</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredSales.map(sale => (
-                                    <tr key={sale.id}>
-                                        <td>{sale.id}</td>
-                                        <td>{sale.date}</td>
-                                        <td>{sale.client}</td>
-                                        <td>R$ {parseFloat(sale.total).toFixed(2)}</td>
-                                        <td>
-                                            {sale.payment === 'dinheiro' && 'Dinheiro'}
-                                            {sale.payment === 'cartao_credito' && 'Cartão de Crédito'}
-                                            {sale.payment === 'cartao_debito' && 'Cartão de Débito'}
-                                            {sale.payment === 'pix' && 'PIX'}
-                                            {sale.payment === 'crediario' && 'Crediário'}
-                                        </td>
-                                        <td>
-                                            <button 
-                                                className="btn btn-sm btn-info" 
-                                                onClick={() => viewSaleReceipt(sale.id)}
-                                            >
-                                                <i className="fas fa-eye"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {reportData.map((sale, index) => {
+                                    const isCanceled = sale.status === 'cancelada' || sale.canceled;
+                                    return (
+                                        <tr key={sale.id} className={isCanceled ? 'table-danger' : ''}>
+                                            <td>{index + 1}</td>
+                                            <td>{new Date(sale.createdAt || sale.created_at).toLocaleString()}</td>
+                                            <td>{sale.client ? sale.client.name : 'Cliente não informado'}</td>
+                                            <td>R$ {parseFloat(sale.total).toFixed(2)}</td>
+                                            <td>{sale.paymentMethod}</td>
+                                            <td>
+                                                {isCanceled ? (
+                                                    <span className="badge bg-danger">Cancelada</span>
+                                                ) : (
+                                                    <span className="badge bg-success">Concluída</span>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <button 
+                                                    className="btn btn-sm btn-info me-1"
+                                                    onClick={() => viewSaleReceipt(sale.id)}
+                                                >
+                                                    <i className="fas fa-eye"></i>
+                                                </button>
+                                                {!isCanceled && (
+                                                    <button 
+                                                        className="btn btn-sm btn-danger"
+                                                        onClick={() => showCancelSaleModal(sale)}
+                                                    >
+                                                        <i className="fas fa-times"></i>
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
-                            <tfoot className="table-light">
+                            <tfoot>
                                 <tr>
-                                    <td colSpan="3" className="text-end fw-bold">Total:</td>
-                                    <td className="fw-bold">R$ {filteredSales.reduce((sum, sale) => sum + parseFloat(sale.total), 0).toFixed(2)}</td>
-                                    <td colSpan="2"></td>
+                                    <td colSpan="3" className="text-end"><strong>Total (apenas vendas concluídas):</strong></td>
+                                    <td><strong>R$ {total}</strong></td>
+                                    <td colSpan="3"></td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
                 );
-            
             case 'inventory':
                 return (
                     <table className="table table-striped table-hover">
@@ -2055,18 +2108,16 @@ const Dashboard = () => {
                                                         <i className={`fas fa-${user.isBlocked ? 'unlock' : 'ban'}`}></i>
                                                     </button>
                                                     <button
-                                                        className="btn btn-info btn-sm"
-                                                        onClick={() => handleViewUserDetails(user.id)}
-                                                        title="Ver detalhes"
-                                                    >
-                                                        <i className="fas fa-eye"></i>
-                                                    </button>
-                                                    <button
                                                         className="btn btn-danger btn-sm"
-                                                        onClick={() => handleDeleteUser(user.id)}
-                                                        title="Excluir usuário"
+                                                        onClick={() => {
+                                                            if (confirm('Tem certeza que deseja excluir este usuário?')) {
+                                                                handleDeleteUser(user.id);
+                                                                onHide();
+                                                            }
+                                                        }}
                                                     >
-                                                        <i className="fas fa-trash"></i>
+                                                        <i className="fas fa-trash me-2"></i>
+                                                        Excluir Usuário
                                                     </button>
                                                 </div>
                                             </td>
@@ -2206,120 +2257,120 @@ const Dashboard = () => {
                 
                 {activeTab === 'products' && (
                     <div>
-                        <div className="row stats mb-4">
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card products position-relative">
-                                    <div>
-                                        <div className="number">{products.length}</div>
-                                        <div className="label">Total de Produtos</div>
-                                    </div>
-                                    <i className="fas fa-box icon"></i>
-                                </div>
+                <div className="row stats mb-4">
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card products position-relative">
+                            <div>
+                                <div className="number">{products.length}</div>
+                                <div className="label">Total de Produtos</div>
                             </div>
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card inputs position-relative">
-                                    <div>
-                                        <div className="number">{stats && stats.totalEntradas ? stats.totalEntradas : 0}</div>
-                                        <div className="label">Entradas</div>
-                                    </div>
-                                    <i className="fas fa-arrow-circle-down icon"></i>
-                                </div>
-                            </div>
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card outputs position-relative">
-                                    <div>
-                                        <div className="number">{stats && stats.totalSaidas ? stats.totalSaidas : 0}</div>
-                                        <div className="label">Saídas</div>
-                                    </div>
-                                    <i className="fas fa-arrow-circle-up icon"></i>
-                                </div>
-                            </div>
-                            <div className="col-xl-3 col-md-6">
-                                <div className="stats-card balance position-relative">
-                                    <div>
-                                        <div className="number">R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                        <div className="label">Valor Total em Estoque</div>
-                                    </div>
-                                    <i className="fas fa-dollar-sign icon"></i>
-                                </div>
-                            </div>
+                            <i className="fas fa-box icon"></i>
                         </div>
+                    </div>
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card inputs position-relative">
+                            <div>
+                                <div className="number">{stats && stats.totalEntradas ? stats.totalEntradas : 0}</div>
+                                <div className="label">Entradas</div>
+                            </div>
+                            <i className="fas fa-arrow-circle-down icon"></i>
+                        </div>
+                    </div>
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card outputs position-relative">
+                            <div>
+                                <div className="number">{stats && stats.totalSaidas ? stats.totalSaidas : 0}</div>
+                                <div className="label">Saídas</div>
+                            </div>
+                            <i className="fas fa-arrow-circle-up icon"></i>
+                        </div>
+                    </div>
+                    <div className="col-xl-3 col-md-6">
+                        <div className="stats-card balance position-relative">
+                            <div>
+                                <div className="number">R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div className="label">Valor Total em Estoque</div>
+                            </div>
+                            <i className="fas fa-dollar-sign icon"></i>
+                        </div>
+                    </div>
+                </div>
 
-                        <div className="row mt-4">
-                            <div className="col-md-6">
-                                <div className="card">
-                                    <div className="card-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
-                                        <h5 className="card-title mb-0">Produtos</h5>
-                                        <div className="d-flex align-items-center w-100 w-md-auto">
-                                            <div className="input-group">
-                                                <span className="input-group-text">
-                                                    <i className="fas fa-search"></i>
-                                                </span>
-                                                <input
-                                                    type="text"
-                                                    className="form-control"
-                                                    placeholder="Buscar produtos..."
-                                                    value={searchTerm}
-                                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                                />
-                                            </div>
-                                            <span className="badge bg-primary ms-2">5</span>
-                                        </div>
+                <div className="row mt-4">
+                    <div className="col-md-6">
+                        <div className="card">
+                            <div className="card-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                                <h5 className="card-title mb-0">Produtos</h5>
+                                <div className="d-flex align-items-center w-100 w-md-auto">
+                                    <div className="input-group">
+                                        <span className="input-group-text">
+                                            <i className="fas fa-search"></i>
+                                        </span>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Buscar produtos..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
                                     </div>
-                                    <div className="card-body p-0">
-                                        <div className="product-list">
+                                            <span className="badge bg-primary ms-2">5</span>
+                                </div>
+                            </div>
+                            <div className="card-body p-0">
+                                <div className="product-list">
                                             {filteredProducts.slice(0, 5).map(product => (
-                                                <div key={product.id} className="product-item p-3 border-bottom">
-                                                    <div className="d-flex justify-content-between align-items-start">
-                                                        <div className="product-info">
-                                                            <h6 className="mb-1">{product.name}</h6>
-                                                            <span className="badge bg-secondary mb-2">{product.category}</span>
-                                                            <div className="product-details">
-                                                                <div className="mb-1">
-                                                                    <strong>Preço:</strong> R$ {parseFloat(product.price).toFixed(2)}
-                                                                </div>
-                                                                <div className="d-flex align-items-center">
-                                                                    <strong>Estoque:</strong>
-                                                                    <span className={`badge ms-2 bg-${product.quantity > 10 ? 'success' : product.quantity > 5 ? 'warning' : 'danger'}`}>
-                                                                        {product.quantity} unidades
-                                                                    </span>
-                                                                </div>
-                                                                {product.quantity <= 5 && (
-                                                                    <div className="text-danger mt-1">
-                                                                        <i className="fas fa-exclamation-triangle me-1"></i>
-                                                                        Estoque Baixo
-                                                                    </div>
-                                                                )}
+                                        <div key={product.id} className="product-item p-3 border-bottom">
+                                            <div className="d-flex justify-content-between align-items-start">
+                                                <div className="product-info">
+                                                    <h6 className="mb-1">{product.name}</h6>
+                                                    <span className="badge bg-secondary mb-2">{product.category}</span>
+                                                    <div className="product-details">
+                                                        <div className="mb-1">
+                                                            <strong>Preço:</strong> R$ {parseFloat(product.price).toFixed(2)}
+                                                        </div>
+                                                        <div className="d-flex align-items-center">
+                                                            <strong>Estoque:</strong>
+                                                            <span className={`badge ms-2 bg-${product.quantity > 10 ? 'success' : product.quantity > 5 ? 'warning' : 'danger'}`}>
+                                                                {product.quantity} unidades
+                                                            </span>
+                                                        </div>
+                                                        {product.quantity <= 5 && (
+                                                            <div className="text-danger mt-1">
+                                                                <i className="fas fa-exclamation-triangle me-1"></i>
+                                                                Estoque Baixo
                                                             </div>
-                                                        </div>
-                                                        <div className="product-actions d-flex flex-column gap-2">
-                                                            <button 
-                                                                className="btn btn-primary btn-sm"
-                                                                onClick={() => {
-                                                                    setSelectedProduct(product);
-                                                                    setShowProductModal(true);
-                                                                }}
-                                                            >
-                                                                <i className="fas fa-edit me-1"></i>
-                                                                Editar
-                                                            </button>
-                                                            <button 
-                                                                className="btn btn-danger btn-sm"
-                                                                onClick={() => handleDeleteProduct(product.id)}
-                                                            >
-                                                                <i className="fas fa-trash me-1"></i>
-                                                                Excluir
-                                                            </button>
-                                                        </div>
+                                                        )}
                                                     </div>
                                                 </div>
-                                            ))}
-                                            {filteredProducts.length === 0 && (
-                                                <div className="text-center p-4">
-                                                    <i className="fas fa-box fa-3x text-muted mb-3 d-block"></i>
-                                                    <p className="text-muted">Nenhum produto encontrado</p>
+                                                <div className="product-actions d-flex flex-column gap-2">
+                                                    <button 
+                                                        className="btn btn-primary btn-sm"
+                                                        onClick={() => {
+                                                            setSelectedProduct(product);
+                                                            setShowProductModal(true);
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-edit me-1"></i>
+                                                        Editar
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-danger btn-sm"
+                                                        onClick={() => handleDeleteProduct(product.id)}
+                                                    >
+                                                        <i className="fas fa-trash me-1"></i>
+                                                        Excluir
+                                                    </button>
                                                 </div>
-                                            )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {filteredProducts.length === 0 && (
+                                        <div className="text-center p-4">
+                                            <i className="fas fa-box fa-3x text-muted mb-3 d-block"></i>
+                                            <p className="text-muted">Nenhum produto encontrado</p>
+                                        </div>
+                                    )}
                                             {filteredProducts.length > 5 && (
                                                 <div className="text-center p-3 border-top">
                                                     <p className="text-muted mb-2">
@@ -2335,56 +2386,56 @@ const Dashboard = () => {
                                                     </button>
                                                 </div>
                                             )}
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
 
-                            <div className="col-md-6">
-                                <div className="card">
-                                    <div className="card-header d-flex justify-content-between align-items-center">
-                                        <h5 className="card-title mb-0">Últimas Movimentações</h5>
+                    <div className="col-md-6">
+                        <div className="card">
+                            <div className="card-header d-flex justify-content-between align-items-center">
+                                <h5 className="card-title mb-0">Últimas Movimentações</h5>
                                         <span className="badge bg-secondary">5 movimentações</span>
-                                    </div>
-                                    <div className="card-body">
-                                        <div className="table-responsive">
-                                            <table className="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Produto</th>
-                                                        <th>Tipo</th>
-                                                        <th>Quantidade</th>
-                                                        <th>Data</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
+                            </div>
+                            <div className="card-body">
+                                <div className="table-responsive">
+                                    <table className="table">
+                                        <thead>
+                                            <tr>
+                                                <th>Produto</th>
+                                                <th>Tipo</th>
+                                                <th>Quantidade</th>
+                                                <th>Data</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
                                                     {movements.slice(0, 5).map(movement => (
-                                                        <tr key={movement.id}>
-                                                            <td>
-                                                                <div>
-                                                                    <strong>{movement.product.name}</strong>
-                                                                    <small className="d-block text-muted">{movement.product.category}</small>
-                                                                </div>
-                                                            </td>
-                                                            <td>
-                                                                <span className={`badge bg-${movement.type === 'entrada' ? 'success' : 'danger'}`}>
-                                                                    {movement.type === 'entrada' ? 'Entrada' : 'Saída'}
-                                                                </span>
-                                                            </td>
-                                                            <td>{movement.quantity}</td>
-                                                            <td>
-                                                                <div>
-                                                                    {new Date(movement.createdAt).toLocaleDateString()}
-                                                                    <small className="d-block text-muted">
-                                                                        {new Date(movement.createdAt).toLocaleTimeString()}
-                                                                    </small>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                <tr key={movement.id}>
+                                                    <td>
+                                                        <div>
+                                                            <strong>{movement.product.name}</strong>
+                                                            <small className="d-block text-muted">{movement.product.category}</small>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <span className={`badge bg-${movement.type === 'entrada' ? 'success' : 'danger'}`}>
+                                                            {movement.type === 'entrada' ? 'Entrada' : 'Saída'}
+                                                        </span>
+                                                    </td>
+                                                    <td>{movement.quantity}</td>
+                                                    <td>
+                                                        <div>
+                                                            {new Date(movement.createdAt).toLocaleDateString()}
+                                                            <small className="d-block text-muted">
+                                                                {new Date(movement.createdAt).toLocaleTimeString()}
+                                                            </small>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                                         {movements.length > 5 && (
                                             <div className="text-center p-3 border-top">
                                                 <p className="text-muted mb-2">
@@ -2398,11 +2449,11 @@ const Dashboard = () => {
                                                     <i className="fas fa-exchange-alt me-1"></i>
                                                     Ver todas as movimentações
                                                 </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
                             </div>
+                                        )}
+                        </div>
+                    </div>
+                </div>
                         </div>
                     </div>
                 )}
@@ -2702,38 +2753,61 @@ const Dashboard = () => {
                                 </div>
                                 
                                 <div className="card">
-                                    <div className="card-header">
-                                        <h5 className="card-title mb-0">Últimas Vendas</h5>
+                                    <div className="card-header d-flex justify-content-between align-items-center">
+                                        <h5 className="mb-0">Últimas Vendas</h5>
+                                        <button 
+                                            className="btn btn-sm btn-primary" 
+                                            onClick={() => setShowSalesSearch(true)}
+                                        >
+                                            <i className="fas fa-search me-1"></i>
+                                            Buscar Vendas
+                                        </button>
                                     </div>
                                     <div className="card-body p-0">
-                                        <div className="list-group list-group-flush">
-                                            {sales.map(sale => (
-                                                <a key={sale.id} 
-                                                href="#" 
-                                                className="list-group-item list-group-item-action"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    viewSaleReceipt(sale.id);
-                                                }}
-                                                >
-                                                    <div className="d-flex w-100 justify-content-between">
-                                                        <h6 className="mb-1">Venda #{sale.id}</h6>
-                                                        <small>R$ {parseFloat(sale.total).toFixed(2)}</small>
-                                                    </div>
-                                                    <p className="mb-1">
-                                                        {sale.client && sale.client.name ? sale.client.name : (sale.clientName ? sale.clientName : 'Cliente não informado')}
-                                                    </p>
-                                                    <small className="text-muted">
-                                                        {new Date(sale.createdAt).toLocaleString()}
-                                                    </small>
-                                                </a>
-                                            ))}
-                                            
-                                            {sales.length === 0 && (
-                                                <div className="text-center py-3">
-                                                    <p className="text-muted mb-0">Nenhuma venda registrada</p>
-                                                </div>
-                                            )}
+                                        <div className="table-responsive">
+                                            <table className="table table-hover mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Data</th>
+                                                        <th>Cliente</th>
+                                                        <th>Total</th>
+                                                        <th>Status</th>
+                                                        <th>Ações</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sales.slice(0, 5).map(sale => (
+                                                        <tr key={sale.id} className={sale.status === 'cancelada' || sale.canceled ? 'table-danger' : ''}>
+                                                            <td>{new Date(sale.createdAt || sale.created_at).toLocaleString()}</td>
+                                                            <td>{sale.client ? sale.client.name : 'Cliente não informado'}</td>
+                                                            <td>R$ {parseFloat(sale.total).toFixed(2)}</td>
+                                                            <td>
+                                                                {(sale.status === 'cancelada' || sale.canceled) ? (
+                                                                    <span className="badge bg-danger">Cancelada</span>
+                                                                ) : (
+                                                                    <span className="badge bg-success">Concluída</span>
+                                                                )}
+                                                            </td>
+                                                            <td>
+                                                                <button 
+                                                                    className="btn btn-sm btn-info me-1"
+                                                                    onClick={() => viewSaleReceipt(sale.id)}
+                                                                >
+                                                                    <i className="fas fa-receipt"></i>
+                                                                </button>
+                                                                {!(sale.status === 'cancelada' || sale.canceled) && (
+                                                                    <button 
+                                                                        className="btn btn-sm btn-danger"
+                                                                        onClick={() => showCancelSaleModal(sale)}
+                                                                    >
+                                                                        <i className="fas fa-times"></i>
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
                                 </div>
@@ -3015,6 +3089,94 @@ const Dashboard = () => {
                 onHide={() => setShowReceiptModal(false)}
                 sale={selectedSale}
             />
+
+            {/* Alerta de Sucesso */}
+            {successMessage && (
+                <div className="alert alert-success alert-dismissible fade show" role="alert">
+                    <i className="fas fa-check-circle me-2"></i>
+                    {successMessage}
+                    <button type="button" className="btn-close" onClick={() => setSuccessMessage('')}></button>
+                </div>
+            )}
+
+            {/* Alerta de Erro */}
+            {error && (
+                <div className="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i className="fas fa-exclamation-circle me-2"></i>
+                    {error}
+                    <button type="button" className="btn-close" onClick={() => setError(null)}></button>
+                </div>
+            )}
+
+            {/* Modal de confirmação de cancelamento */}
+            <div className={`modal ${showCancelConfirmModal ? 'show' : ''}`} 
+                style={{ display: showCancelConfirmModal ? 'block' : 'none' }}>
+                <div className="modal-dialog">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h5 className="modal-title">Confirmar Cancelamento</h5>
+                            <button 
+                                type="button" 
+                                className="btn-close" 
+                                onClick={() => setShowCancelConfirmModal(false)}
+                            ></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="alert alert-warning">
+                                <i className="fas fa-exclamation-triangle me-2"></i>
+                                Você está prestes a cancelar a venda #{saleToCancel && saleToCancel.id}
+                            </div>
+                            <p>
+                                O cancelamento irá:
+                            </p>
+                            <ul>
+                                <li>Devolver todos os produtos ao estoque</li>
+                                <li>Marcar a venda como "Cancelada" no sistema</li>
+                                <li>Registrar as entradas de estoque como devolução</li>
+                            </ul>
+                            <p className="mb-0 fw-bold text-danger">
+                                Esta ação não pode ser desfeita!
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button 
+                                type="button" 
+                                className="btn btn-secondary" 
+                                onClick={() => setShowCancelConfirmModal(false)}
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                type="button" 
+                                className="btn btn-danger" 
+                                onClick={cancelSale}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <span>
+                                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        Processando...
+                                    </span>
+                                ) : (
+                                    <span>
+                                        <i className="fas fa-times-circle me-2"></i>
+                                        Confirmar Cancelamento
+                                    </span>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Modal de Busca de Vendas */}
+            <SalesSearchModal 
+                show={showSalesSearch}
+                onHide={() => setShowSalesSearch(false)}
+                sales={sales}
+                onViewReceipt={viewSaleReceipt}
+                onCancelSale={showCancelSaleModal}
+            />
         </React.Fragment>
     );
 };
@@ -3078,7 +3240,7 @@ const App = () => {
                     <div className="d-flex">
                         <button className="btn btn-outline-light me-2" onClick={handlePublicLinkClick} title="Gerar Link Público">
                             <i className="fas fa-share-alt"></i> Link Público
-                        </button>
+                            </button>
                         <button className="btn btn-outline-danger" onClick={logout}>
                             <i className="fas fa-sign-out-alt"></i> Sair
                         </button>
@@ -3144,7 +3306,7 @@ ReactDOM.render(
         <App />
     </AuthProvider>,
     document.getElementById('root')
-);
+); 
 
 // Função para copiar texto para a área de transferência
 async function copyToClipboard(text) {
@@ -3211,6 +3373,16 @@ const SaleReceiptModal = ({ show, onHide, sale }) => {
                             margin-top: 20px;
                             font-size: 10px;
                         }
+                        .canceled {
+                            color: red;
+                            font-weight: bold;
+                            font-size: 14px;
+                            text-align: center;
+                            border: 1px dashed red;
+                            padding: 5px;
+                            margin: 10px 0;
+                            transform: rotate(-5deg);
+                        }
                     </style>
                 </head>
                 <body>
@@ -3219,6 +3391,7 @@ const SaleReceiptModal = ({ show, onHide, sale }) => {
                         <p>CNPJ: XX.XXX.XXX/0001-XX</p>
                         <p>Comprovante de Venda #${sale.id}</p>
                         <p>${new Date(sale.createdAt).toLocaleString()}</p>
+                        ${sale.status === 'cancelada' ? '<div class="canceled">VENDA CANCELADA</div>' : ''}
                     </div>
                     
                     <div class="divider"></div>
@@ -3294,6 +3467,9 @@ const SaleReceiptModal = ({ show, onHide, sale }) => {
                     <div className="modal-body">
                         <div className="text-center mb-3">
                             <h5>{JSON.parse(localStorage.getItem('userData') || '{}').company || 'Nome da Empresa'}</h5>
+                            {sale.status === 'cancelada' && (
+                                <div className="badge bg-danger fs-6 mt-2">VENDA CANCELADA</div>
+                            )}
                         </div>
                         
                         <div className="d-flex justify-content-between mb-3">
@@ -3361,6 +3537,21 @@ const SaleReceiptModal = ({ show, onHide, sale }) => {
                             <i className="fas fa-print me-2"></i>
                             Imprimir
                         </button>
+                        {sale.status !== 'cancelada' && (
+                            <button 
+                                type="button" 
+                                className="btn btn-danger" 
+                                onClick={() => {
+                                    onHide();
+                                    window.setTimeout(() => {
+                                        showCancelSaleModal(sale);
+                                    }, 500);
+                                }}
+                            >
+                                <i className="fas fa-times-circle me-2"></i>
+                                Cancelar Venda
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -3619,6 +3810,153 @@ const ClientDetailsModal = ({ show, onHide, client }) => {
                     </div>
                     <div className="modal-footer">
                         <button type="button" className="btn btn-secondary" onClick={onHide}>Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SalesSearchModal = ({ show, onHide, sales, onViewReceipt, onCancelSale }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [dateFilter, setDateFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all'); // all, active, canceled
+
+    const filteredSales = sales.filter(sale => {
+        const matchesSearch = 
+            (sale.client && sale.client.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            sale.id.toString().includes(searchTerm) ||
+            sale.total.toString().includes(searchTerm);
+
+        const saleDate = new Date(sale.createdAt || sale.created_at);
+        const today = new Date();
+        const matchesDate = 
+            dateFilter === 'all' ||
+            (dateFilter === 'today' && saleDate.toDateString() === today.toDateString()) ||
+            (dateFilter === 'week' && (today - saleDate) <= 7 * 24 * 60 * 60 * 1000) ||
+            (dateFilter === 'month' && (today - saleDate) <= 30 * 24 * 60 * 60 * 1000);
+
+        const isCanceled = sale.status === 'cancelada' || sale.canceled;
+        const matchesStatus = 
+            statusFilter === 'all' ||
+            (statusFilter === 'active' && !isCanceled) ||
+            (statusFilter === 'canceled' && isCanceled);
+
+        return matchesSearch && matchesDate && matchesStatus;
+    });
+
+    const handleViewReceipt = (saleId) => {
+        onHide(); // Fecha o modal de busca
+        setTimeout(() => {
+            onViewReceipt(saleId); // Abre o modal do recibo após um pequeno delay
+        }, 300);
+    };
+
+    const handleCancelSale = (sale) => {
+        onHide(); // Fecha o modal de busca
+        setTimeout(() => {
+            onCancelSale(sale); // Abre o modal de cancelamento após um pequeno delay
+        }, 300);
+    };
+
+    return (
+        <div className={`modal fade ${show ? 'show' : ''}`} style={{ display: show ? 'block' : 'none' }}>
+            <div className="modal-dialog modal-lg">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h5 className="modal-title">Buscar Vendas</h5>
+                        <button type="button" className="btn-close" onClick={onHide}></button>
+                    </div>
+                    <div className="modal-body">
+                        <div className="row mb-3">
+                            <div className="col-md-4">
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    placeholder="Buscar por cliente, ID ou valor..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <div className="col-md-4">
+                                <select 
+                                    className="form-select"
+                                    value={dateFilter}
+                                    onChange={(e) => setDateFilter(e.target.value)}
+                                >
+                                    <option value="all">Todas as datas</option>
+                                    <option value="today">Hoje</option>
+                                    <option value="week">Última semana</option>
+                                    <option value="month">Último mês</option>
+                                </select>
+                            </div>
+                            <div className="col-md-4">
+                                <select 
+                                    className="form-select"
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                >
+                                    <option value="all">Todos os status</option>
+                                    <option value="active">Ativas</option>
+                                    <option value="canceled">Canceladas</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="table-responsive">
+                            <table className="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Cliente</th>
+                                        <th>Total</th>
+                                        <th>Status</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredSales.map(sale => {
+                                        const isCanceled = sale.status === 'cancelada' || sale.canceled;
+                                        return (
+                                            <tr key={sale.id} className={isCanceled ? 'table-danger' : ''}>
+                                                <td>{new Date(sale.createdAt || sale.created_at).toLocaleString()}</td>
+                                                <td>{sale.client ? sale.client.name : 'Cliente não informado'}</td>
+                                                <td>R$ {parseFloat(sale.total).toFixed(2)}</td>
+                                                <td>
+                                                    {isCanceled ? (
+                                                        <span className="badge bg-danger">Cancelada</span>
+                                                    ) : (
+                                                        <span className="badge bg-success">Concluída</span>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    <button 
+                                                        className="btn btn-sm btn-info me-1"
+                                                        onClick={() => handleViewReceipt(sale.id)}
+                                                    >
+                                                        <i className="fas fa-receipt"></i>
+                                                    </button>
+                                                    {!isCanceled && (
+                                                        <button 
+                                                            className="btn btn-sm btn-danger"
+                                                            onClick={() => handleCancelSale(sale)}
+                                                        >
+                                                            <i className="fas fa-times"></i>
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                    {filteredSales.length === 0 && (
+                                        <tr>
+                                            <td colSpan="5" className="text-center py-3">
+                                                Nenhuma venda encontrada com os critérios selecionados
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
