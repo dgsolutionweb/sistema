@@ -844,6 +844,12 @@ const Dashboard = () => {
     const [viewingClient, setViewingClient] = useState(null);
     const [clientSearchTerm, setClientSearchTerm] = useState('');
     const [filteredClients, setFilteredClients] = useState([]);
+    const [reportType, setReportType] = useState('sales');
+    const [reportStartDate, setReportStartDate] = useState('');
+    const [reportEndDate, setReportEndDate] = useState('');
+    const [includeReportDetails, setIncludeReportDetails] = useState(false);
+    const [reportData, setReportData] = useState([]);
+    const [clientSearchReport, setClientSearchReport] = useState('');
 
     const fetchData = async () => {
         if (!token) {
@@ -1145,6 +1151,693 @@ const Dashboard = () => {
         }
     };
 
+    // Funções para relatórios
+    const generateReport = async () => {
+        if (!reportStartDate || !reportEndDate) {
+            setError('Selecione as datas inicial e final para gerar o relatório.');
+            setTimeout(() => setError(''), 3000);
+            return;
+        }
+        
+        setLoading(true);
+        setReportData([]);
+        
+        try {
+            let endpoint = '';
+            let params = {
+                startDate: reportStartDate,
+                endDate: reportEndDate,
+                includeDetails: includeReportDetails
+            };
+            
+            switch (reportType) {
+                case 'sales':
+                    endpoint = '/reports/sales';
+                    break;
+                case 'inventory':
+                    endpoint = '/reports/inventory';
+                    break;
+                case 'bestsellers':
+                    endpoint = '/reports/bestsellers';
+                    break;
+                case 'financial':
+                    endpoint = '/reports/financial';
+                    break;
+                default:
+                    endpoint = '/reports/sales';
+            }
+            
+            // Simulando dados de relatório (remover quando a API estiver pronta)
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            let simulatedData = [];
+            const startDate = new Date(reportStartDate);
+            const endDate = new Date(reportEndDate);
+            
+            if (reportType === 'sales') {
+                // Simulando relatório de vendas
+                simulatedData = sales
+                    .filter(sale => {
+                        const saleDate = new Date(sale.createdAt);
+                        return saleDate >= startDate && saleDate <= endDate;
+                    })
+                    .map(sale => ({
+                        id: sale.id,
+                        date: new Date(sale.createdAt).toLocaleString(),
+                        client: sale.client ? sale.client.name : 'Cliente não informado',
+                        total: parseFloat(sale.total),
+                        payment: sale.paymentMethod
+                    }));
+            } else if (reportType === 'inventory') {
+                // Simulando relatório de movimentações
+                simulatedData = movements
+                    .filter(movement => {
+                        const movDate = new Date(movement.createdAt);
+                        return movDate >= startDate && movDate <= endDate;
+                    })
+                    .map(movement => ({
+                        id: movement.id,
+                        date: new Date(movement.createdAt).toLocaleString(),
+                        product: movement.product ? movement.product.name : 'Produto não encontrado',
+                        quantity: movement.quantity,
+                        type: movement.type === 'in' ? 'Entrada' : 'Saída',
+                        reason: movement.reason || '-'
+                    }));
+            } else if (reportType === 'bestsellers') {
+                // Simulando relatório de produtos mais vendidos
+                const productSales = {};
+                
+                // Contabilizar vendas por produto
+                sales
+                    .filter(sale => {
+                        const saleDate = new Date(sale.createdAt);
+                        return saleDate >= startDate && saleDate <= endDate;
+                    })
+                    .forEach(sale => {
+                        sale.items.forEach(item => {
+                            const productId = item.productId;
+                            const productName = item.product ? item.product.name : 'Produto não encontrado';
+                            const quantity = item.quantity;
+                            const total = item.price * quantity;
+                            
+                            if (!productSales[productId]) {
+                                productSales[productId] = {
+                                    name: productName,
+                                    quantity: 0,
+                                    total: 0
+                                };
+                            }
+                            
+                            productSales[productId].quantity += quantity;
+                            productSales[productId].total += total;
+                        });
+                    });
+                
+                // Converter para array e ordenar
+                simulatedData = Object.keys(productSales).map(productId => ({
+                    id: productId,
+                    name: productSales[productId].name,
+                    quantity: productSales[productId].quantity,
+                    total: productSales[productId].total
+                })).sort((a, b) => b.quantity - a.quantity);
+                
+                // Adicionar ranking
+                simulatedData = simulatedData.map((item, index) => ({
+                    ...item,
+                    ranking: index + 1
+                }));
+            } else if (reportType === 'financial') {
+                // Simulando relatório financeiro
+                let totalSales = 0;
+                let totalByMethod = {
+                    dinheiro: 0,
+                    cartao_credito: 0,
+                    cartao_debito: 0,
+                    pix: 0,
+                    crediario: 0
+                };
+                
+                sales
+                    .filter(sale => {
+                        const saleDate = new Date(sale.createdAt);
+                        return saleDate >= startDate && saleDate <= endDate;
+                    })
+                    .forEach(sale => {
+                        const total = parseFloat(sale.total);
+                        totalSales += total;
+                        
+                        if (sale.paymentMethod && totalByMethod[sale.paymentMethod] !== undefined) {
+                            totalByMethod[sale.paymentMethod] += total;
+                        }
+                    });
+                
+                simulatedData = [
+                    { category: 'Total de Vendas', value: totalSales.toFixed(2), percentage: '100%' },
+                    { category: 'Dinheiro', value: totalByMethod.dinheiro.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.dinheiro / totalSales) * 100).toFixed(1)}%` : '0%' },
+                    { category: 'Cartão de Crédito', value: totalByMethod.cartao_credito.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.cartao_credito / totalSales) * 100).toFixed(1)}%` : '0%' },
+                    { category: 'Cartão de Débito', value: totalByMethod.cartao_debito.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.cartao_debito / totalSales) * 100).toFixed(1)}%` : '0%' },
+                    { category: 'PIX', value: totalByMethod.pix.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.pix / totalSales) * 100).toFixed(1)}%` : '0%' },
+                    { category: 'Crediário', value: totalByMethod.crediario.toFixed(2), percentage: totalSales > 0 ? `${((totalByMethod.crediario / totalSales) * 100).toFixed(1)}%` : '0%' }
+                ];
+                
+                // Se incluir detalhes, adicionar as vendas no relatório
+                if (includeReportDetails) {
+                    const detailedSales = sales
+                        .filter(sale => {
+                            const saleDate = new Date(sale.createdAt);
+                            return saleDate >= startDate && saleDate <= endDate;
+                        })
+                        .map(sale => ({
+                            id: sale.id,
+                            date: new Date(sale.createdAt).toLocaleString(),
+                            client: sale.client ? sale.client.name : 'Cliente não informado',
+                            total: parseFloat(sale.total),
+                            payment: sale.paymentMethod
+                        }));
+                    
+                    simulatedData.push({ category: 'Detalhes de Vendas', isHeader: true });
+                    simulatedData = [...simulatedData, ...detailedSales];
+                }
+            }
+            
+            setReportData(simulatedData);
+            setSuccessMessage('Relatório gerado com sucesso!');
+            setTimeout(() => setSuccessMessage(''), 3000);
+            
+            /* Quando a API estiver pronta, usar este código:
+            const response = await axios.get(endpoint, { params });
+            setReportData(response.data);
+            */
+        } catch (error) {
+            console.error('Erro ao gerar relatório:', error);
+            setError('Erro ao gerar relatório. Por favor, tente novamente.');
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const renderReportTable = () => {
+        if (reportData.length === 0) return null;
+        
+        switch (reportType) {
+            case 'sales':
+                // Filtrar por cliente se houver busca
+                const filteredSales = clientSearchReport 
+                    ? reportData.filter(sale => 
+                        sale.client.toLowerCase().includes(clientSearchReport.toLowerCase()))
+                    : reportData;
+                
+                // Se não houver resultados após a filtragem
+                if (filteredSales.length === 0) {
+                    return (
+                        <div className="alert alert-info text-center">
+                            <i className="fas fa-info-circle me-2"></i>
+                            Nenhuma venda encontrada para o cliente "{clientSearchReport}".
+                        </div>
+                    );
+                }
+                
+                return (
+                    <div>
+                        {clientSearchReport && (
+                            <div className="alert alert-success mb-3">
+                                <i className="fas fa-filter me-2"></i>
+                                Mostrando {filteredSales.length} {filteredSales.length === 1 ? 'venda' : 'vendas'} para o cliente "{clientSearchReport}".
+                            </div>
+                        )}
+                        
+                        <table className="table table-striped table-hover">
+                            <thead className="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Data</th>
+                                    <th>Cliente</th>
+                                    <th>Total</th>
+                                    <th>Pagamento</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredSales.map(sale => (
+                                    <tr key={sale.id}>
+                                        <td>{sale.id}</td>
+                                        <td>{sale.date}</td>
+                                        <td>{sale.client}</td>
+                                        <td>R$ {parseFloat(sale.total).toFixed(2)}</td>
+                                        <td>
+                                            {sale.payment === 'dinheiro' && 'Dinheiro'}
+                                            {sale.payment === 'cartao_credito' && 'Cartão de Crédito'}
+                                            {sale.payment === 'cartao_debito' && 'Cartão de Débito'}
+                                            {sale.payment === 'pix' && 'PIX'}
+                                            {sale.payment === 'crediario' && 'Crediário'}
+                                        </td>
+                                        <td>
+                                            <button 
+                                                className="btn btn-sm btn-info" 
+                                                onClick={() => viewSaleReceipt(sale.id)}
+                                            >
+                                                <i className="fas fa-eye"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="table-light">
+                                <tr>
+                                    <td colSpan="3" className="text-end fw-bold">Total:</td>
+                                    <td className="fw-bold">R$ {filteredSales.reduce((sum, sale) => sum + parseFloat(sale.total), 0).toFixed(2)}</td>
+                                    <td colSpan="2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                );
+            
+            case 'inventory':
+                return (
+                    <table className="table table-striped table-hover">
+                        <thead className="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Data</th>
+                                <th>Produto</th>
+                                <th>Tipo</th>
+                                <th>Quantidade</th>
+                                <th>Motivo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reportData.map(movement => (
+                                <tr key={movement.id}>
+                                    <td>{movement.id}</td>
+                                    <td>{movement.date}</td>
+                                    <td>{movement.product}</td>
+                                    <td>
+                                        <span className={`badge ${movement.type === 'Entrada' ? 'bg-success' : 'bg-danger'}`}>
+                                            {movement.type}
+                                        </span>
+                                    </td>
+                                    <td>{movement.quantity}</td>
+                                    <td>{movement.reason}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot className="table-light">
+                            <tr>
+                                <td colSpan="4" className="text-end fw-bold">Total de Entradas:</td>
+                                <td className="fw-bold">{reportData.filter(m => m.type === 'Entrada').reduce((sum, m) => sum + m.quantity, 0)}</td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td colSpan="4" className="text-end fw-bold">Total de Saídas:</td>
+                                <td className="fw-bold">{reportData.filter(m => m.type === 'Saída').reduce((sum, m) => sum + m.quantity, 0)}</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                );
+                
+            case 'bestsellers':
+                return (
+                    <table className="table table-striped table-hover">
+                        <thead className="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Produto</th>
+                                <th>Quantidade Vendida</th>
+                                <th>Total em Vendas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reportData.map(product => (
+                                <tr key={product.id}>
+                                    <td>{product.ranking}</td>
+                                    <td>{product.name}</td>
+                                    <td>{product.quantity}</td>
+                                    <td>R$ {parseFloat(product.total).toFixed(2)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot className="table-light">
+                            <tr>
+                                <td colSpan="2" className="text-end fw-bold">Total:</td>
+                                <td className="fw-bold">{reportData.reduce((sum, product) => sum + product.quantity, 0)}</td>
+                                <td className="fw-bold">R$ {reportData.reduce((sum, product) => sum + parseFloat(product.total), 0).toFixed(2)}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                );
+                
+            case 'financial':
+                return (
+                    <table className="table table-striped table-hover">
+                        <thead className="table-light">
+                            <tr>
+                                <th>Categoria</th>
+                                <th>Valor</th>
+                                <th>Percentual</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reportData.map((item, index) => {
+                                if (item.isHeader) {
+                                    return (
+                                        <tr key={`header-${index}`}>
+                                            <td colSpan="3" className="bg-light fw-bold">{item.category}</td>
+                                        </tr>
+                                    );
+                                } else if (item.id) {
+                                    // Dados de venda específica
+                                    return (
+                                        <tr key={`sale-${item.id}`}>
+                                            <td>Venda #{item.id} - {item.date} ({item.client})</td>
+                                            <td>R$ {parseFloat(item.total).toFixed(2)}</td>
+                                            <td>
+                                                {item.payment === 'dinheiro' && 'Dinheiro'}
+                                                {item.payment === 'cartao_credito' && 'Cartão de Crédito'}
+                                                {item.payment === 'cartao_debito' && 'Cartão de Débito'}
+                                                {item.payment === 'pix' && 'PIX'}
+                                                {item.payment === 'crediario' && 'Crediário'}
+                                            </td>
+                                        </tr>
+                                    );
+                                } else {
+                                    // Dados de resumo
+                                    return (
+                                        <tr key={`summary-${index}`}>
+                                            <td>{item.category}</td>
+                                            <td className="fw-bold">R$ {item.value}</td>
+                                            <td>{item.percentage}</td>
+                                        </tr>
+                                    );
+                                }
+                            })}
+                        </tbody>
+                    </table>
+                );
+                
+            default:
+                return null;
+        }
+    };
+    
+    const printReport = () => {
+        const printWindow = window.open('', '_blank');
+        const userData = JSON.parse(localStorage.getItem('userData')) || {};
+        
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Relatório - ${reportType === 'sales' ? 'Vendas' : reportType === 'inventory' ? 'Movimentações de Estoque' : reportType === 'bestsellers' ? 'Produtos Mais Vendidos' : 'Financeiro'}</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            margin: 20px;
+                        }
+                        .header {
+                            text-align: center;
+                            margin-bottom: 20px;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin-bottom: 20px;
+                        }
+                        th, td {
+                            border: 1px solid #ddd;
+                            padding: 8px;
+                            text-align: left;
+                        }
+                        th {
+                            background-color: #f2f2f2;
+                        }
+                        .total-row {
+                            font-weight: bold;
+                            background-color: #f2f2f2;
+                        }
+                        .footer {
+                            text-align: center;
+                            margin-top: 30px;
+                            font-size: 12px;
+                            color: #666;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>${userData.company || 'Nome da Empresa'}</h2>
+                        <h3>Relatório de ${reportType === 'sales' ? 'Vendas' : reportType === 'inventory' ? 'Movimentações de Estoque' : reportType === 'bestsellers' ? 'Produtos Mais Vendidos' : 'Financeiro'}</h3>
+                        <p>Período: ${new Date(reportStartDate).toLocaleDateString()} a ${new Date(reportEndDate).toLocaleDateString()}</p>
+                    </div>
+                    
+                    ${(() => {
+                        switch (reportType) {
+                            case 'sales':
+                                return `
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Data</th>
+                                                <th>Cliente</th>
+                                                <th>Total</th>
+                                                <th>Pagamento</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${reportData.map(sale => `
+                                                <tr>
+                                                    <td>${sale.id}</td>
+                                                    <td>${sale.date}</td>
+                                                    <td>${sale.client}</td>
+                                                    <td>R$ ${parseFloat(sale.total).toFixed(2)}</td>
+                                                    <td>
+                                                        ${sale.payment === 'dinheiro' ? 'Dinheiro' : 
+                                                          sale.payment === 'cartao_credito' ? 'Cartão de Crédito' : 
+                                                          sale.payment === 'cartao_debito' ? 'Cartão de Débito' : 
+                                                          sale.payment === 'pix' ? 'PIX' : 
+                                                          sale.payment === 'crediario' ? 'Crediário' : sale.payment}
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr class="total-row">
+                                                <td colspan="3" style="text-align: right;">Total:</td>
+                                                <td colspan="2">R$ ${reportData.reduce((sum, sale) => sum + parseFloat(sale.total), 0).toFixed(2)}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                `;
+                            
+                            case 'inventory':
+                                return `
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Data</th>
+                                                <th>Produto</th>
+                                                <th>Tipo</th>
+                                                <th>Quantidade</th>
+                                                <th>Motivo</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${reportData.map(movement => `
+                                                <tr>
+                                                    <td>${movement.id}</td>
+                                                    <td>${movement.date}</td>
+                                                    <td>${movement.product}</td>
+                                                    <td>${movement.type}</td>
+                                                    <td>${movement.quantity}</td>
+                                                    <td>${movement.reason}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr class="total-row">
+                                                <td colspan="4" style="text-align: right;">Total de Entradas:</td>
+                                                <td colspan="2">${reportData.filter(m => m.type === 'Entrada').reduce((sum, m) => sum + m.quantity, 0)}</td>
+                                            </tr>
+                                            <tr class="total-row">
+                                                <td colspan="4" style="text-align: right;">Total de Saídas:</td>
+                                                <td colspan="2">${reportData.filter(m => m.type === 'Saída').reduce((sum, m) => sum + m.quantity, 0)}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                `;
+                                
+                            case 'bestsellers':
+                                return `
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Produto</th>
+                                                <th>Quantidade Vendida</th>
+                                                <th>Total em Vendas</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${reportData.map(product => `
+                                                <tr>
+                                                    <td>${product.ranking}</td>
+                                                    <td>${product.name}</td>
+                                                    <td>${product.quantity}</td>
+                                                    <td>R$ ${parseFloat(product.total).toFixed(2)}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr class="total-row">
+                                                <td colspan="2" style="text-align: right;">Total:</td>
+                                                <td>${reportData.reduce((sum, product) => sum + product.quantity, 0)}</td>
+                                                <td>R$ ${reportData.reduce((sum, product) => sum + parseFloat(product.total), 0).toFixed(2)}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                `;
+                                
+                            case 'financial':
+                                return `
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Categoria</th>
+                                                <th>Valor</th>
+                                                <th>Percentual</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${reportData.map((item, index) => {
+                                                if (item.isHeader) {
+                                                    return `
+                                                        <tr>
+                                                            <td colspan="3" style="background-color: #f2f2f2; font-weight: bold;">${item.category}</td>
+                                                        </tr>
+                                                    `;
+                                                } else if (item.id) {
+                                                    return `
+                                                        <tr>
+                                                            <td>Venda #${item.id} - ${item.date} (${item.client})</td>
+                                                            <td>R$ ${parseFloat(item.total).toFixed(2)}</td>
+                                                            <td>
+                                                                ${item.payment === 'dinheiro' ? 'Dinheiro' : 
+                                                                  item.payment === 'cartao_credito' ? 'Cartão de Crédito' : 
+                                                                  item.payment === 'cartao_debito' ? 'Cartão de Débito' : 
+                                                                  item.payment === 'pix' ? 'PIX' : 
+                                                                  item.payment === 'crediario' ? 'Crediário' : item.payment}
+                                                            </td>
+                                                        </tr>
+                                                    `;
+                                                } else {
+                                                    return `
+                                                        <tr>
+                                                            <td>${item.category}</td>
+                                                            <td style="font-weight: bold;">R$ ${item.value}</td>
+                                                            <td>${item.percentage}</td>
+                                                        </tr>
+                                                    `;
+                                                }
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                `;
+                                
+                            default:
+                                return '';
+                        }
+                    })()}
+                    
+                    <div class="footer">
+                        <p>Relatório gerado em ${new Date().toLocaleString()}</p>
+                        <p>${userData.company || 'Nome da Empresa'} - Todos os direitos reservados</p>
+                    </div>
+                </body>
+            </html>
+        `);
+        
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        setTimeout(function() { printWindow.close(); }, 500);
+    };
+    
+    const exportReport = () => {
+        let csvContent = '';
+        
+        switch (reportType) {
+            case 'sales':
+                csvContent = 'ID,Data,Cliente,Total,Forma de Pagamento\n';
+                reportData.forEach(sale => {
+                    const payment = sale.payment === 'dinheiro' ? 'Dinheiro' : 
+                                    sale.payment === 'cartao_credito' ? 'Cartão de Crédito' : 
+                                    sale.payment === 'cartao_debito' ? 'Cartão de Débito' : 
+                                    sale.payment === 'pix' ? 'PIX' : 
+                                    sale.payment === 'crediario' ? 'Crediário' : sale.payment;
+                    
+                    csvContent += `${sale.id},"${sale.date}","${sale.client}",${parseFloat(sale.total).toFixed(2)},"${payment}"\n`;
+                });
+                
+                csvContent += `\nTotal,,,${reportData.reduce((sum, sale) => sum + parseFloat(sale.total), 0).toFixed(2)},`;
+                break;
+                
+            case 'inventory':
+                csvContent = 'ID,Data,Produto,Tipo,Quantidade,Motivo\n';
+                reportData.forEach(movement => {
+                    csvContent += `${movement.id},"${movement.date}","${movement.product}","${movement.type}",${movement.quantity},"${movement.reason}"\n`;
+                });
+                
+                csvContent += `\nTotal Entradas,,,${reportData.filter(m => m.type === 'Entrada').reduce((sum, m) => sum + m.quantity, 0)},,\n`;
+                csvContent += `Total Saídas,,,${reportData.filter(m => m.type === 'Saída').reduce((sum, m) => sum + m.quantity, 0)},,`;
+                break;
+                
+            case 'bestsellers':
+                csvContent = 'Ranking,Produto,Quantidade Vendida,Total em Vendas\n';
+                reportData.forEach(product => {
+                    csvContent += `${product.ranking},"${product.name}",${product.quantity},${parseFloat(product.total).toFixed(2)}\n`;
+                });
+                
+                csvContent += `\nTotal,,${reportData.reduce((sum, product) => sum + product.quantity, 0)},${reportData.reduce((sum, product) => sum + parseFloat(product.total), 0).toFixed(2)}`;
+                break;
+                
+            case 'financial':
+                csvContent = 'Categoria,Valor,Percentual\n';
+                reportData.forEach(item => {
+                    if (item.isHeader) {
+                        csvContent += `\n${item.category}\n`;
+                    } else if (item.id) {
+                        const payment = item.payment === 'dinheiro' ? 'Dinheiro' : 
+                                        item.payment === 'cartao_credito' ? 'Cartão de Crédito' : 
+                                        item.payment === 'cartao_debito' ? 'Cartão de Débito' : 
+                                        item.payment === 'pix' ? 'PIX' : 
+                                        item.payment === 'crediario' ? 'Crediário' : item.payment;
+                        
+                        csvContent += `"Venda #${item.id} - ${item.date} (${item.client})",${parseFloat(item.total).toFixed(2)},"${payment}"\n`;
+                    } else {
+                        csvContent += `"${item.category}",${item.value},"${item.percentage}"\n`;
+                    }
+                });
+                break;
+                
+            default:
+                return;
+        }
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `relatorio_${reportType}_${reportStartDate}_a_${reportEndDate}.csv`);
+        link.style.visibility = 'hidden';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const renderAdminPanel = () => {
         // Calcular estatísticas dos usuários
         const totalUsers = users.length;
@@ -1355,7 +2048,7 @@ const Dashboard = () => {
                                                         </button>
                                                     )}
                                                     <button
-                                                        className={`btn btn-${user.isBlocked ? 'warning' : 'danger'} btn-sm`}
+                                                        className={`btn btn-${user.isBlocked ? 'warning' : 'danger'}`}
                                                         onClick={() => handleStatusChange(user.id, user.isBlocked ? 'unblock' : 'block')}
                                                         title={user.isBlocked ? 'Desbloquear usuário' : 'Bloquear usuário'}
                                                     >
@@ -1444,6 +2137,13 @@ const Dashboard = () => {
         return (
             <div className="container-fluid py-4">
                 <div className="d-flex flex-wrap gap-2 mb-4">
+                    <button 
+                        className="btn btn-secondary" 
+                        onClick={() => setActiveTab('products')}
+                    >
+                        <i className="fas fa-tachometer-alt me-2"></i>
+                        Dashboard
+                    </button>
                     <button 
                         className="btn btn-info" 
                         onClick={() => setShowCategoryModal(true)}
@@ -1563,12 +2263,12 @@ const Dashboard = () => {
                                                     onChange={(e) => setSearchTerm(e.target.value)}
                                                 />
                                             </div>
-                                            <span className="badge bg-primary ms-2">{filteredProducts.length}</span>
+                                            <span className="badge bg-primary ms-2">5</span>
                                         </div>
                                     </div>
                                     <div className="card-body p-0">
                                         <div className="product-list">
-                                            {filteredProducts.map(product => (
+                                            {filteredProducts.slice(0, 5).map(product => (
                                                 <div key={product.id} className="product-item p-3 border-bottom">
                                                     <div className="d-flex justify-content-between align-items-start">
                                                         <div className="product-info">
@@ -1620,6 +2320,21 @@ const Dashboard = () => {
                                                     <p className="text-muted">Nenhum produto encontrado</p>
                                                 </div>
                                             )}
+                                            {filteredProducts.length > 5 && (
+                                                <div className="text-center p-3 border-top">
+                                                    <p className="text-muted mb-2">
+                                                        <i className="fas fa-info-circle me-1"></i>
+                                                        Mostrando 5 de {filteredProducts.length} produtos
+                                                    </p>
+                                                    <button 
+                                                        className="btn btn-outline-primary btn-sm"
+                                                        onClick={() => setActiveTab('products')}
+                                                    >
+                                                        <i className="fas fa-list me-1"></i>
+                                                        Ver todos os produtos
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -1629,7 +2344,7 @@ const Dashboard = () => {
                                 <div className="card">
                                     <div className="card-header d-flex justify-content-between align-items-center">
                                         <h5 className="card-title mb-0">Últimas Movimentações</h5>
-                                        <span className="badge bg-secondary">{movements.length} movimentações</span>
+                                        <span className="badge bg-secondary">5 movimentações</span>
                                     </div>
                                     <div className="card-body">
                                         <div className="table-responsive">
@@ -1643,7 +2358,7 @@ const Dashboard = () => {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {movements.map(movement => (
+                                                    {movements.slice(0, 5).map(movement => (
                                                         <tr key={movement.id}>
                                                             <td>
                                                                 <div>
@@ -1670,6 +2385,21 @@ const Dashboard = () => {
                                                 </tbody>
                                             </table>
                                         </div>
+                                        {movements.length > 5 && (
+                                            <div className="text-center p-3 border-top">
+                                                <p className="text-muted mb-2">
+                                                    <i className="fas fa-info-circle me-1"></i>
+                                                    Mostrando 5 de {movements.length} movimentações
+                                                </p>
+                                                <button 
+                                                    className="btn btn-outline-secondary btn-sm"
+                                                    onClick={() => setActiveTab('movements')}
+                                                >
+                                                    <i className="fas fa-exchange-alt me-1"></i>
+                                                    Ver todas as movimentações
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -2005,6 +2735,192 @@ const Dashboard = () => {
                                                 </div>
                                             )}
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
+                {activeTab === 'reports' && (
+                    <div>
+                        <div className="mb-4 d-flex justify-content-between align-items-center">
+                            <h4>Relatórios</h4>
+                        </div>
+                        
+                        <div className="row">
+                            <div className="col-md-3 mb-4">
+                                <div className="list-group">
+                                    <button 
+                                        className={`list-group-item list-group-item-action ${reportType === 'sales' ? 'active' : ''}`}
+                                        onClick={() => setReportType('sales')}
+                                    >
+                                        <i className="fas fa-shopping-cart me-2"></i>
+                                        Vendas
+                                    </button>
+                                    <button 
+                                        className={`list-group-item list-group-item-action ${reportType === 'inventory' ? 'active' : ''}`}
+                                        onClick={() => setReportType('inventory')}
+                                    >
+                                        <i className="fas fa-boxes me-2"></i>
+                                        Movimentações de Estoque
+                                    </button>
+                                    <button 
+                                        className={`list-group-item list-group-item-action ${reportType === 'bestsellers' ? 'active' : ''}`}
+                                        onClick={() => setReportType('bestsellers')}
+                                    >
+                                        <i className="fas fa-chart-line me-2"></i>
+                                        Produtos Mais Vendidos
+                                    </button>
+                                    <button 
+                                        className={`list-group-item list-group-item-action ${reportType === 'financial' ? 'active' : ''}`}
+                                        onClick={() => setReportType('financial')}
+                                    >
+                                        <i className="fas fa-dollar-sign me-2"></i>
+                                        Financeiro
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div className="col-md-9">
+                                <div className="card">
+                                    <div className="card-header">
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <h5 className="mb-0">
+                                                {reportType === 'sales' && 'Relatório de Vendas'}
+                                                {reportType === 'inventory' && 'Relatório de Movimentações de Estoque'}
+                                                {reportType === 'bestsellers' && 'Relatório de Produtos Mais Vendidos'}
+                                                {reportType === 'financial' && 'Relatório Financeiro'}
+                                            </h5>
+                                            <button 
+                                                className="btn btn-sm btn-primary" 
+                                                onClick={generateReport}
+                                                disabled={loading}
+                                            >
+                                                {loading ? <span><i className="fas fa-spinner fa-spin me-2"></i>Gerando...</span> : <span>Gerar Relatório</span>}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="card-body">
+                                        {/* Filtros de data */}
+                                        <div className="form-group mb-3">
+                                            <div className="row g-2">
+                                                <div className="col-md-5">
+                                                    <label htmlFor="reportStartDate" className="form-label">Data Inicial</label>
+                                                    <input 
+                                                        type="date" 
+                                                        className="form-control" 
+                                                        id="reportStartDate"
+                                                        value={reportStartDate} 
+                                                        onChange={e => setReportStartDate(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="col-md-5">
+                                                    <label htmlFor="reportEndDate" className="form-label">Data Final</label>
+                                                    <input 
+                                                        type="date" 
+                                                        className="form-control" 
+                                                        id="reportEndDate"
+                                                        value={reportEndDate} 
+                                                        onChange={e => setReportEndDate(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="col-md-2 d-flex align-items-end">
+                                                    <button 
+                                                        className="btn btn-primary w-100" 
+                                                        onClick={generateReport}
+                                                        disabled={loading}
+                                                    >
+                                                        {loading ? <span><i className="fas fa-spinner fa-spin me-2"></i>Gerando...</span> : <span>Gerar Relatório</span>}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Campo de busca por cliente - somente para relatório de vendas */}
+                                        {reportType === 'sales' && (
+                                            <div className="form-group mb-3">
+                                                <div className="input-group">
+                                                    <span className="input-group-text">
+                                                        <i className="fas fa-search"></i>
+                                                    </span>
+                                                    <input 
+                                                        type="text" 
+                                                        className="form-control" 
+                                                        placeholder="Buscar por cliente (nome ou CPF/CNPJ)" 
+                                                        value={clientSearchReport}
+                                                        onChange={e => setClientSearchReport(e.target.value)}
+                                                    />
+                                                    {clientSearchReport && (
+                                                        <button 
+                                                            className="btn btn-outline-secondary" 
+                                                            onClick={() => setClientSearchReport('')}
+                                                            title="Limpar busca"
+                                                        >
+                                                            <i className="fas fa-times"></i>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {reportType === 'financial' && (
+                                            <div className="mb-3">
+                                                <div className="form-check">
+                                                    <input 
+                                                        className="form-check-input" 
+                                                        type="checkbox" 
+                                                        id="includeDetails"
+                                                        checked={includeReportDetails}
+                                                        onChange={(e) => setIncludeReportDetails(e.target.checked)}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="includeDetails">
+                                                        Incluir detalhes de transações
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {reportData.length > 0 ? (
+                                            <div>
+                                                <div className="d-flex justify-content-end mb-3">
+                                                    <button 
+                                                        className="btn btn-sm btn-outline-primary me-2" 
+                                                        onClick={printReport}
+                                                    >
+                                                        <i className="fas fa-print me-1"></i>
+                                                        Imprimir
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-sm btn-outline-success" 
+                                                        onClick={exportReport}
+                                                    >
+                                                        <i className="fas fa-file-excel me-1"></i>
+                                                        Exportar
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="table-responsive">
+                                                    {renderReportTable()}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-5">
+                                                {loading ? (
+                                                    <div>
+                                                        <div className="spinner-border text-primary mb-3" role="status">
+                                                            <span className="visually-hidden">Carregando...</span>
+                                                        </div>
+                                                        <p className="text-muted">Gerando relatório...</p>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        <i className="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                                                        <p className="text-muted">Selecione um período e clique em Gerar Relatório</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -2582,13 +3498,13 @@ const ClientsListModal = ({ show, onHide, clients, onEdit, onDelete, onView }) =
                     </div>
                     <div className="modal-body">
                         <div className="mb-3">
-                            <div className="input-group">
-                                <span className="input-group-text">
-                                    <i className="fas fa-search"></i>
-                                </span>
-                                <input 
-                                    type="text" 
-                                    className="form-control"
+                                                <div className="input-group">
+                                                    <span className="input-group-text">
+                                                        <i className="fas fa-search"></i>
+                                                    </span>
+                                                    <input 
+                                                        type="text" 
+                                                        className="form-control"
                                     placeholder="Buscar por nome, CPF/CNPJ ou telefone..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -2617,7 +3533,7 @@ const ClientsListModal = ({ show, onHide, clients, onEdit, onDelete, onView }) =
                                             <td>{client.document}</td>
                                             <td>
                                                 <div className="btn-group">
-                                                    <button 
+                                                        <button 
                                                         className="btn btn-sm btn-info" 
                                                         onClick={() => onView(client)}
                                                         title="Visualizar"

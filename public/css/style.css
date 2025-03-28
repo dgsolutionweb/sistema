@@ -507,10 +507,7 @@ body {
     z-index: 9999;
 }
 
-/* Dashboard layout */
-.container-fluid {
-    margin-top: 56px; /* Para dar espaço para a barra de navegação fixa */
-}
+
 
 /* Modal background */
 .modal {
@@ -608,4 +605,10 @@ body {
 
 .modal-backdrop {
     display: none;
+}
+
+/* Sobrescrever py-4 para remover padding */
+.py-4 {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
 } 
