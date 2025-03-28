@@ -823,6 +823,27 @@ const Dashboard = () => {
     const [selectedUser, setSelectedUser] = useState(null);
     const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
     const [companyName, setCompanyName] = useState('');
+    const [activeTab, setActiveTab] = useState('products');
+    const [saleItems, setSaleItems] = useState([]);
+    const [selectedSaleProduct, setSelectedSaleProduct] = useState(null);
+    const [saleItemQuantity, setSaleItemQuantity] = useState(1);
+    const [currentDiscount, setCurrentDiscount] = useState(0);
+    const [paymentMethod, setPaymentMethod] = useState('dinheiro');
+    const [selectedClient, setSelectedClient] = useState(null);
+    const [showClientModal, setShowClientModal] = useState(false);
+    const [showReceiptModal, setShowReceiptModal] = useState(false);
+    const [selectedSale, setSelectedSale] = useState(null);
+    const [sales, setSales] = useState([]);
+    const [clients, setClients] = useState([]);
+    const [productSearchTerm, setProductSearchTerm] = useState('');
+    const [filteredSaleProducts, setFilteredSaleProducts] = useState([]);
+    // Novos estados para gerenciamento de clientes
+    const [showClientOptionsModal, setShowClientOptionsModal] = useState(false);
+    const [showClientsListModal, setShowClientsListModal] = useState(false);
+    const [showClientDetailsModal, setShowClientDetailsModal] = useState(false);
+    const [viewingClient, setViewingClient] = useState(null);
+    const [clientSearchTerm, setClientSearchTerm] = useState('');
+    const [filteredClients, setFilteredClients] = useState([]);
 
     const fetchData = async () => {
         if (!token) {
@@ -837,12 +858,16 @@ const Dashboard = () => {
             // Ensure the token is set in axios headers
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
-            const [statsRes, productsRes, categoriesRes, movementsRes] = await Promise.all([
+            const [statsRes, productsRes, categoriesRes, movementsRes, clientsRes] = await Promise.all([
                 axios.get('/movements/stats'),
                 axios.get('/products'),
                 axios.get('/categories'),
-                axios.get('/movements')
+                axios.get('/movements'),
+                axios.get('/clients')
             ]);
+
+            // Obter vendas com detalhes completos
+            const salesRes = await axios.get('/sales?include=client');
 
             // Only update state if the component is still mounted and we have a token
             if (token) {
@@ -850,6 +875,8 @@ const Dashboard = () => {
                 setProducts(productsRes.data);
                 setCategories(categoriesRes.data);
                 setMovements(movementsRes.data);
+                setSales(salesRes.data);
+                setClients(clientsRes.data);
             }
         } catch (error) {
             console.error('Erro ao carregar dados:', error);
@@ -975,6 +1002,21 @@ const Dashboard = () => {
         }
     };
 
+    const handleClientSubmit = async (formData) => {
+        try {
+            if (selectedClient) {
+                await axios.put(`/clients/${selectedClient.id}`, formData);
+            } else {
+                await axios.post('/clients', formData);
+            }
+            fetchData();
+            setShowClientModal(false);
+        } catch (error) {
+            console.error('Erro ao salvar cliente:', error);
+            setError(error.response && error.response.data ? error.response.data.message : 'Erro ao salvar cliente');
+        }
+    };
+
     const handleDeleteProduct = async (id) => {
         if (window.confirm('Tem certeza que deseja excluir este produto?')) {
             try {
@@ -984,6 +1026,42 @@ const Dashboard = () => {
                 console.error('Erro ao excluir produto:', error);
             }
         }
+    };
+
+    const handleDeleteClient = async (id) => {
+        if (window.confirm('Tem certeza que deseja excluir este cliente?')) {
+            try {
+                await axios.delete(`/clients/${id}`);
+                setSuccessMessage('Cliente excluído com sucesso!');
+                fetchData();
+                setTimeout(() => setSuccessMessage(''), 3000);
+            } catch (error) {
+                console.error('Erro ao excluir cliente:', error);
+                setError(error.response && error.response.data ? error.response.data.message : 'Erro ao excluir cliente');
+            }
+        }
+    };
+
+    const handleOpenNewClient = () => {
+        setSelectedClient(null);
+        setShowClientOptionsModal(false);
+        setShowClientModal(true);
+    };
+
+    const handleOpenClientsList = () => {
+        setShowClientOptionsModal(false);
+        setShowClientsListModal(true);
+    };
+
+    const handleViewClient = (client) => {
+        setViewingClient(client);
+        setShowClientDetailsModal(true);
+    };
+
+    const handleEditClient = (client) => {
+        setSelectedClient(client);
+        setShowClientsListModal(false);
+        setShowClientModal(true);
     };
 
     const handleViewUserDetails = (userId) => {
@@ -998,6 +1076,74 @@ const Dashboard = () => {
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         product.category.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // Funções para o PDV
+    const calculateSubtotal = () => {
+        return saleItems.reduce((total, item) => total + item.total, 0);
+    };
+
+    const finalizeSale = async () => {
+        if (saleItems.length === 0) return;
+        
+        try {
+            setLoading(true);
+            
+            const saleData = {
+                items: saleItems.map(item => ({
+                    productId: item.productId,
+                    quantity: item.quantity,
+                    price: item.price
+                })),
+                discount: currentDiscount,
+                total: calculateSubtotal() - currentDiscount,
+                clientId: selectedClient ? selectedClient.id : null,
+                paymentMethod: paymentMethod
+            };
+            
+            const response = await axios.post('/sales', saleData);
+            
+            // Atualizar lista de produtos (para refletir o estoque atualizado)
+            fetchData();
+            
+            // Limpar formulário
+            setSaleItems([]);
+            setSelectedSaleProduct(null);
+            setCurrentDiscount(0);
+            setPaymentMethod('dinheiro');
+            setSelectedClient(null);
+            setClientSearchTerm('');
+            setProductSearchTerm('');
+            setFilteredSaleProducts([]);
+            setFilteredClients([]);
+            
+            // Exibir mensagem de sucesso
+            setSuccessMessage('Venda finalizada com sucesso!');
+            setTimeout(() => setSuccessMessage(''), 3000);
+            
+            // Exibir comprovante
+            viewSaleReceipt(response.data.id);
+            
+        } catch (error) {
+            console.error('Erro ao finalizar venda:', error);
+            setError('Erro ao finalizar venda. Por favor, tente novamente.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const viewSaleReceipt = async (saleId) => {
+        try {
+            setLoading(true);
+            const response = await axios.get(`/sales/${saleId}`);
+            setSelectedSale(response.data);
+            setShowReceiptModal(true);
+        } catch (error) {
+            console.error('Erro ao buscar detalhes da venda:', error);
+            setError('Erro ao buscar detalhes da venda');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const renderAdminPanel = () => {
         // Calcular estatísticas dos usuários
@@ -1332,176 +1478,539 @@ const Dashboard = () => {
                         <i className="fas fa-search me-2"></i>
                         Buscar Produtos
                     </button>
+                    <button 
+                        className="btn btn-warning" 
+                        onClick={() => setActiveTab('sales')}
+                    >
+                        <i className="fas fa-shopping-cart me-2"></i>
+                        PDV
+                    </button>
+                    <button 
+                        className="btn btn-dark" 
+                        onClick={() => setActiveTab('reports')}
+                    >
+                        <i className="fas fa-chart-bar me-2"></i>
+                        Relatórios
+                    </button>
+                    <button 
+                        className="btn btn-info" 
+                        onClick={() => {
+                            setSelectedClient(null);
+                            setShowClientOptionsModal(true);
+                        }}
+                    >
+                        <i className="fas fa-user-plus me-2"></i>
+                        Gerenciar Clientes
+                    </button>
                 </div>
                 
-                <div className="row stats mb-4">
-                    <div className="col-xl-3 col-md-6">
-                        <div className="stats-card products position-relative">
-                            <div>
-                                <div className="number">{products.length}</div>
-                                <div className="label">Total de Produtos</div>
-                            </div>
-                            <i className="fas fa-box icon"></i>
-                        </div>
-                    </div>
-                    <div className="col-xl-3 col-md-6">
-                        <div className="stats-card inputs position-relative">
-                            <div>
-                                <div className="number">{stats && stats.totalEntradas ? stats.totalEntradas : 0}</div>
-                                <div className="label">Entradas</div>
-                            </div>
-                            <i className="fas fa-arrow-circle-down icon"></i>
-                        </div>
-                    </div>
-                    <div className="col-xl-3 col-md-6">
-                        <div className="stats-card outputs position-relative">
-                            <div>
-                                <div className="number">{stats && stats.totalSaidas ? stats.totalSaidas : 0}</div>
-                                <div className="label">Saídas</div>
-                            </div>
-                            <i className="fas fa-arrow-circle-up icon"></i>
-                        </div>
-                    </div>
-                    <div className="col-xl-3 col-md-6">
-                        <div className="stats-card balance position-relative">
-                            <div>
-                                <div className="number">R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                <div className="label">Valor Total em Estoque</div>
-                            </div>
-                            <i className="fas fa-dollar-sign icon"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="row mt-4">
-                    <div className="col-md-6">
-                        <div className="card">
-                            <div className="card-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
-                                <h5 className="card-title mb-0">Produtos</h5>
-                                <div className="d-flex align-items-center w-100 w-md-auto">
-                                    <div className="input-group">
-                                        <span className="input-group-text">
-                                            <i className="fas fa-search"></i>
-                                        </span>
-                                        <input
-                                            type="text"
-                                            className="form-control"
-                                            placeholder="Buscar produtos..."
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                        />
+                {activeTab === 'products' && (
+                    <div>
+                        <div className="row stats mb-4">
+                            <div className="col-xl-3 col-md-6">
+                                <div className="stats-card products position-relative">
+                                    <div>
+                                        <div className="number">{products.length}</div>
+                                        <div className="label">Total de Produtos</div>
                                     </div>
-                                    <span className="badge bg-primary ms-2">{filteredProducts.length}</span>
+                                    <i className="fas fa-box icon"></i>
                                 </div>
                             </div>
-                            <div className="card-body p-0">
-                                <div className="product-list">
-                                    {filteredProducts.map(product => (
-                                        <div key={product.id} className="product-item p-3 border-bottom">
-                                            <div className="d-flex justify-content-between align-items-start">
-                                                <div className="product-info">
-                                                    <h6 className="mb-1">{product.name}</h6>
-                                                    <span className="badge bg-secondary mb-2">{product.category}</span>
-                                                    <div className="product-details">
-                                                        <div className="mb-1">
-                                                            <strong>Preço:</strong> R$ {parseFloat(product.price).toFixed(2)}
+                            <div className="col-xl-3 col-md-6">
+                                <div className="stats-card inputs position-relative">
+                                    <div>
+                                        <div className="number">{stats && stats.totalEntradas ? stats.totalEntradas : 0}</div>
+                                        <div className="label">Entradas</div>
+                                    </div>
+                                    <i className="fas fa-arrow-circle-down icon"></i>
+                                </div>
+                            </div>
+                            <div className="col-xl-3 col-md-6">
+                                <div className="stats-card outputs position-relative">
+                                    <div>
+                                        <div className="number">{stats && stats.totalSaidas ? stats.totalSaidas : 0}</div>
+                                        <div className="label">Saídas</div>
+                                    </div>
+                                    <i className="fas fa-arrow-circle-up icon"></i>
+                                </div>
+                            </div>
+                            <div className="col-xl-3 col-md-6">
+                                <div className="stats-card balance position-relative">
+                                    <div>
+                                        <div className="number">R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                        <div className="label">Valor Total em Estoque</div>
+                                    </div>
+                                    <i className="fas fa-dollar-sign icon"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="row mt-4">
+                            <div className="col-md-6">
+                                <div className="card">
+                                    <div className="card-header d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                                        <h5 className="card-title mb-0">Produtos</h5>
+                                        <div className="d-flex align-items-center w-100 w-md-auto">
+                                            <div className="input-group">
+                                                <span className="input-group-text">
+                                                    <i className="fas fa-search"></i>
+                                                </span>
+                                                <input
+                                                    type="text"
+                                                    className="form-control"
+                                                    placeholder="Buscar produtos..."
+                                                    value={searchTerm}
+                                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                                />
+                                            </div>
+                                            <span className="badge bg-primary ms-2">{filteredProducts.length}</span>
+                                        </div>
+                                    </div>
+                                    <div className="card-body p-0">
+                                        <div className="product-list">
+                                            {filteredProducts.map(product => (
+                                                <div key={product.id} className="product-item p-3 border-bottom">
+                                                    <div className="d-flex justify-content-between align-items-start">
+                                                        <div className="product-info">
+                                                            <h6 className="mb-1">{product.name}</h6>
+                                                            <span className="badge bg-secondary mb-2">{product.category}</span>
+                                                            <div className="product-details">
+                                                                <div className="mb-1">
+                                                                    <strong>Preço:</strong> R$ {parseFloat(product.price).toFixed(2)}
+                                                                </div>
+                                                                <div className="d-flex align-items-center">
+                                                                    <strong>Estoque:</strong>
+                                                                    <span className={`badge ms-2 bg-${product.quantity > 10 ? 'success' : product.quantity > 5 ? 'warning' : 'danger'}`}>
+                                                                        {product.quantity} unidades
+                                                                    </span>
+                                                                </div>
+                                                                {product.quantity <= 5 && (
+                                                                    <div className="text-danger mt-1">
+                                                                        <i className="fas fa-exclamation-triangle me-1"></i>
+                                                                        Estoque Baixo
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        <div className="d-flex align-items-center">
-                                                            <strong>Estoque:</strong>
-                                                            <span className={`badge ms-2 bg-${product.quantity > 10 ? 'success' : product.quantity > 5 ? 'warning' : 'danger'}`}>
-                                                                {product.quantity} unidades
-                                                            </span>
+                                                        <div className="product-actions d-flex flex-column gap-2">
+                                                            <button 
+                                                                className="btn btn-primary btn-sm"
+                                                                onClick={() => {
+                                                                    setSelectedProduct(product);
+                                                                    setShowProductModal(true);
+                                                                }}
+                                                            >
+                                                                <i className="fas fa-edit me-1"></i>
+                                                                Editar
+                                                            </button>
+                                                            <button 
+                                                                className="btn btn-danger btn-sm"
+                                                                onClick={() => handleDeleteProduct(product.id)}
+                                                            >
+                                                                <i className="fas fa-trash me-1"></i>
+                                                                Excluir
+                                                            </button>
                                                         </div>
-                                                        {product.quantity <= 5 && (
-                                                            <div className="text-danger mt-1">
-                                                                <i className="fas fa-exclamation-triangle me-1"></i>
-                                                                Estoque Baixo
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {filteredProducts.length === 0 && (
+                                                <div className="text-center p-4">
+                                                    <i className="fas fa-box fa-3x text-muted mb-3 d-block"></i>
+                                                    <p className="text-muted">Nenhum produto encontrado</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="col-md-6">
+                                <div className="card">
+                                    <div className="card-header d-flex justify-content-between align-items-center">
+                                        <h5 className="card-title mb-0">Últimas Movimentações</h5>
+                                        <span className="badge bg-secondary">{movements.length} movimentações</span>
+                                    </div>
+                                    <div className="card-body">
+                                        <div className="table-responsive">
+                                            <table className="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Produto</th>
+                                                        <th>Tipo</th>
+                                                        <th>Quantidade</th>
+                                                        <th>Data</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {movements.map(movement => (
+                                                        <tr key={movement.id}>
+                                                            <td>
+                                                                <div>
+                                                                    <strong>{movement.product.name}</strong>
+                                                                    <small className="d-block text-muted">{movement.product.category}</small>
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <span className={`badge bg-${movement.type === 'entrada' ? 'success' : 'danger'}`}>
+                                                                    {movement.type === 'entrada' ? 'Entrada' : 'Saída'}
+                                                                </span>
+                                                            </td>
+                                                            <td>{movement.quantity}</td>
+                                                            <td>
+                                                                <div>
+                                                                    {new Date(movement.createdAt).toLocaleDateString()}
+                                                                    <small className="d-block text-muted">
+                                                                        {new Date(movement.createdAt).toLocaleTimeString()}
+                                                                    </small>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
+                {activeTab === 'sales' && (
+                    <div>
+                        <div className="mb-4 d-flex justify-content-between align-items-center">
+                            <h4>PDV - Ponto de Venda</h4>
+                            <button 
+                                className="btn btn-success" 
+                                id="newSaleBtn"
+                                onClick={() => {
+                                    // Limpar formulário de venda
+                                    setSaleItems([]);
+                                    setSelectedSaleProduct(null);
+                                    setCurrentDiscount(0);
+                                    setPaymentMethod('dinheiro');
+                                }}
+                            >
+                                <i className="fas fa-plus me-2"></i>
+                                Nova Venda
+                            </button>
+                        </div>
+                        
+                        <div className="row">
+                            <div className="col-md-8">
+                                <div className="card mb-4">
+                                    <div className="card-header">
+                                        <h5 className="card-title mb-0">Itens da Venda</h5>
+                                    </div>
+                                    <div className="card-body">
+                                        <form id="saleForm" className="mb-4" onSubmit={(e) => {
+                                            e.preventDefault();
+                                            if (!selectedSaleProduct) return;
+                                            
+                                            // Verificar se já existe o produto na lista
+                                            const existingItemIndex = saleItems.findIndex(item => item.productId === selectedSaleProduct.id);
+                                            
+                                            if (existingItemIndex >= 0) {
+                                                // Atualizar quantidade do item existente
+                                                const newItems = [...saleItems];
+                                                newItems[existingItemIndex].quantity += parseInt(saleItemQuantity);
+                                                newItems[existingItemIndex].total = newItems[existingItemIndex].quantity * newItems[existingItemIndex].price;
+                                                setSaleItems(newItems);
+                                            } else {
+                                                // Adicionar novo item
+                                                const newItem = {
+                                                    productId: selectedSaleProduct.id,
+                                                    productName: selectedSaleProduct.name,
+                                                    productCategory: selectedSaleProduct.category,
+                                                    price: parseFloat(selectedSaleProduct.price),
+                                                    quantity: parseInt(saleItemQuantity),
+                                                    total: parseFloat(selectedSaleProduct.price) * parseInt(saleItemQuantity)
+                                                };
+                                                setSaleItems([...saleItems, newItem]);
+                                            }
+                                            
+                                            // Limpar formulário
+                                            setSelectedSaleProduct(null);
+                                            setSaleItemQuantity(1);
+                                            setProductSearchTerm('');
+                                            setFilteredSaleProducts([]);
+                                            document.getElementById('saleForm').reset();
+                                        }}>
+                                            <div className="row g-3">
+                                                <div className="col-md-6">
+                                                    <label className="form-label">Produto</label>
+                                                    <div className="position-relative">
+                                                        <input
+                                                            type="text"
+                                                            className="form-control"
+                                                            placeholder="Digite o nome do produto"
+                                                            value={productSearchTerm}
+                                                            onChange={(e) => {
+                                                                setProductSearchTerm(e.target.value);
+                                                                if (e.target.value.length > 2) {
+                                                                    const filtered = products
+                                                                        .filter(p => 
+                                                                            p.quantity > 0 && 
+                                                                            p.name.toLowerCase().includes(e.target.value.toLowerCase())
+                                                                        )
+                                                                        .slice(0, 5);
+                                                                    setFilteredSaleProducts(filtered);
+                                                                } else {
+                                                                    setFilteredSaleProducts([]);
+                                                                }
+                                                            }}
+                                                            required
+                                                        />
+                                                        {filteredSaleProducts.length > 0 && (
+                                                            <div className="position-absolute w-100 mt-1 bg-white shadow rounded border" style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                                                                {filteredSaleProducts.map(product => (
+                                                                    <div 
+                                                                        key={product.id} 
+                                                                        className="p-2 border-bottom cursor-pointer hover-bg-light"
+                                                                        style={{ cursor: 'pointer' }}
+                                                                        onClick={() => {
+                                                                            setSelectedSaleProduct(product);
+                                                                            setProductSearchTerm(product.name);
+                                                                            setFilteredSaleProducts([]);
+                                                                        }}
+                                                                    >
+                                                                        <div className="fw-bold">{product.name}</div>
+                                                                        <div className="small text-muted d-flex justify-content-between">
+                                                                            <span>{product.category}</span>
+                                                                            <span>R$ {parseFloat(product.price).toFixed(2)} | Estoque: {product.quantity}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
                                                             </div>
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="product-actions d-flex flex-column gap-2">
+                                                <div className="col-md-3">
+                                                    <label className="form-label">Quantidade</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="form-control" 
+                                                        min="1" 
+                                                        value={saleItemQuantity}
+                                                        onChange={(e) => setSaleItemQuantity(parseInt(e.target.value))}
+                                                        max={selectedSaleProduct ? selectedSaleProduct.quantity : 1}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="col-md-3 d-flex align-items-end">
                                                     <button 
-                                                        className="btn btn-primary btn-sm"
-                                                        onClick={() => {
-                                                            setSelectedProduct(product);
-                                                            setShowProductModal(true);
-                                                        }}
+                                                        type="submit" 
+                                                        className="btn btn-primary w-100"
+                                                        disabled={!selectedSaleProduct}
                                                     >
-                                                        <i className="fas fa-edit me-1"></i>
-                                                        Editar
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-danger btn-sm"
-                                                        onClick={() => handleDeleteProduct(product.id)}
-                                                    >
-                                                        <i className="fas fa-trash me-1"></i>
-                                                        Excluir
+                                                        <i className="fas fa-cart-plus me-2"></i>
+                                                        Adicionar
                                                     </button>
                                                 </div>
                                             </div>
+                                        </form>
+                                        
+                                        <div className="table-responsive">
+                                            <table className="table table-hover">
+                                                <thead className="table-light">
+                                                    <tr>
+                                                        <th>Produto</th>
+                                                        <th className="text-center">Preço</th>
+                                                        <th className="text-center">Qtde</th>
+                                                        <th className="text-center">Total</th>
+                                                        <th className="text-center">Ações</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {saleItems.map((item, index) => (
+                                                        <tr key={index}>
+                                                            <td>
+                                                                <div>
+                                                                    <strong>{item.productName}</strong>
+                                                                    <small className="d-block text-muted">{item.productCategory}</small>
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center">R$ {item.price.toFixed(2)}</td>
+                                                            <td className="text-center">{item.quantity}</td>
+                                                            <td className="text-center">R$ {item.total.toFixed(2)}</td>
+                                                            <td className="text-center">
+                                                                <button 
+                                                                    className="btn btn-outline-danger btn-sm"
+                                                                    onClick={() => {
+                                                                        const newItems = saleItems.filter((_, i) => i !== index);
+                                                                        setSaleItems(newItems);
+                                                                    }}
+                                                                >
+                                                                    <i className="fas fa-trash"></i>
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                    
+                                                    {saleItems.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan="5" className="text-center py-3">
+                                                                <p className="text-muted mb-0">Nenhum item adicionado</p>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
                                         </div>
-                                    ))}
-                                    {filteredProducts.length === 0 && (
-                                        <div className="text-center p-4">
-                                            <i className="fas fa-box fa-3x text-muted mb-3 d-block"></i>
-                                            <p className="text-muted">Nenhum produto encontrado</p>
-                                        </div>
-                                    )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    <div className="col-md-6">
-                        <div className="card">
-                            <div className="card-header d-flex justify-content-between align-items-center">
-                                <h5 className="card-title mb-0">Últimas Movimentações</h5>
-                                <span className="badge bg-secondary">{movements.length} movimentações</span>
-                            </div>
-                            <div className="card-body">
-                                <div className="table-responsive">
-                                    <table className="table">
-                                        <thead>
-                                            <tr>
-                                                <th>Produto</th>
-                                                <th>Tipo</th>
-                                                <th>Quantidade</th>
-                                                <th>Data</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {movements.map(movement => (
-                                                <tr key={movement.id}>
-                                                    <td>
-                                                        <div>
-                                                            <strong>{movement.product.name}</strong>
-                                                            <small className="d-block text-muted">{movement.product.category}</small>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <span className={`badge bg-${movement.type === 'entrada' ? 'success' : 'danger'}`}>
-                                                            {movement.type === 'entrada' ? 'Entrada' : 'Saída'}
-                                                        </span>
-                                                    </td>
-                                                    <td>{movement.quantity}</td>
-                                                    <td>
-                                                        <div>
-                                                            {new Date(movement.createdAt).toLocaleDateString()}
-                                                            <small className="d-block text-muted">
-                                                                {new Date(movement.createdAt).toLocaleTimeString()}
-                                                            </small>
-                                                        </div>
-                                                    </td>
-                                                </tr>
+                            
+                            <div className="col-md-4">
+                                <div className="card mb-4">
+                                    <div className="card-header">
+                                        <h5 className="card-title mb-0">Resumo da Venda</h5>
+                                    </div>
+                                    <div className="card-body">
+                                        <div className="d-flex justify-content-between mb-3">
+                                            <span>Subtotal:</span>
+                                            <span className="fw-bold">R$ {calculateSubtotal().toFixed(2)}</span>
+                                        </div>
+                                        
+                                        <div className="mb-3">
+                                            <label className="form-label">Desconto</label>
+                                            <div className="input-group">
+                                                <input 
+                                                    type="number" 
+                                                    className="form-control" 
+                                                    placeholder="0,00" 
+                                                    min="0"
+                                                    value={currentDiscount}
+                                                    onChange={(e) => setCurrentDiscount(parseFloat(e.target.value) || 0)}
+                                                />
+                                                <span className="input-group-text">R$</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="d-flex justify-content-between mb-4">
+                                            <span className="fw-bold fs-5">Total:</span>
+                                            <span className="fw-bold fs-5 text-primary">R$ {(calculateSubtotal() - currentDiscount).toFixed(2)}</span>
+                                        </div>
+                                        
+                                        <hr className="my-3" />
+                                        
+                                        <div className="mb-3">
+                                            <label className="form-label">Cliente</label>
+                                            <div className="position-relative">
+                                                <input
+                                                    type="text"
+                                                    className="form-control"
+                                                    placeholder="Digite nome, CPF/CNPJ ou telefone do cliente..."
+                                                    value={clientSearchTerm}
+                                                    onChange={(e) => {
+                                                        setClientSearchTerm(e.target.value);
+                                                        if (e.target.value.length > 2) {
+                                                            const filtered = clients
+                                                                .filter(c => 
+                                                                    c.name.toLowerCase().includes(e.target.value.toLowerCase()) || 
+                                                                    (c.document && c.document.includes(e.target.value)) ||
+                                                                    (c.phone && c.phone.includes(e.target.value)) ||
+                                                                    (c.email && c.email.toLowerCase().includes(e.target.value.toLowerCase()))
+                                                                )
+                                                                .slice(0, 5);
+                                                            setFilteredClients(filtered);
+                                                        } else {
+                                                            setFilteredClients([]);
+                                                        }
+                                                    }}
+                                                />
+                                                {filteredClients.length > 0 && (
+                                                    <div className="position-absolute w-100 mt-1 bg-white shadow rounded border" style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                                                        {filteredClients.map(client => (
+                                                            <div 
+                                                                key={client.id} 
+                                                                className="p-2 border-bottom cursor-pointer hover-bg-light"
+                                                                style={{ cursor: 'pointer' }}
+                                                                onClick={() => {
+                                                                    setSelectedClient(client);
+                                                                    setClientSearchTerm(client.name);
+                                                                    setFilteredClients([]);
+                                                                }}
+                                                            >
+                                                                <div className="fw-bold">{client.name}</div>
+                                                                <div className="small text-muted d-flex justify-content-between">
+                                                                    <span>{client.document ? client.document : (client.email || '')}</span>
+                                                                    <span>{client.phone || ''}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="mb-4">
+                                            <label className="form-label">Forma de Pagamento</label>
+                                            <select 
+                                                className="form-select"
+                                                value={paymentMethod}
+                                                onChange={(e) => setPaymentMethod(e.target.value)}
+                                            >
+                                                <option value="dinheiro">Dinheiro</option>
+                                                <option value="cartao_credito">Cartão de Crédito</option>
+                                                <option value="cartao_debito">Cartão de Débito</option>
+                                                <option value="pix">PIX</option>
+                                                <option value="crediario">Crediário</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <button 
+                                            className="btn btn-success w-100 py-2"
+                                            disabled={saleItems.length === 0}
+                                            onClick={() => finalizeSale()}
+                                        >
+                                            <i className="fas fa-check-circle me-2"></i>
+                                            Finalizar Venda
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div className="card">
+                                    <div className="card-header">
+                                        <h5 className="card-title mb-0">Últimas Vendas</h5>
+                                    </div>
+                                    <div className="card-body p-0">
+                                        <div className="list-group list-group-flush">
+                                            {sales.map(sale => (
+                                                <a key={sale.id} 
+                                                href="#" 
+                                                className="list-group-item list-group-item-action"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    viewSaleReceipt(sale.id);
+                                                }}
+                                                >
+                                                    <div className="d-flex w-100 justify-content-between">
+                                                        <h6 className="mb-1">Venda #{sale.id}</h6>
+                                                        <small>R$ {parseFloat(sale.total).toFixed(2)}</small>
+                                                    </div>
+                                                    <p className="mb-1">
+                                                        {sale.client && sale.client.name ? sale.client.name : (sale.clientName ? sale.clientName : 'Cliente não informado')}
+                                                    </p>
+                                                    <small className="text-muted">
+                                                        {new Date(sale.createdAt).toLocaleString()}
+                                                    </small>
+                                                </a>
                                             ))}
-                                        </tbody>
-                                    </table>
+                                            
+                                            {sales.length === 0 && (
+                                                <div className="text-center py-3">
+                                                    <p className="text-muted mb-0">Nenhuma venda registrada</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
         );
     };
@@ -1554,6 +2063,41 @@ const Dashboard = () => {
                     setSelectedUser(null);
                 }}
                 user={selectedUser}
+            />
+
+            <ClientModal
+                show={showClientModal}
+                onHide={() => setShowClientModal(false)}
+                client={selectedClient}
+                onSubmit={handleClientSubmit}
+            />
+
+            <ClientOptionsModal
+                show={showClientOptionsModal}
+                onHide={() => setShowClientOptionsModal(false)}
+                onNewClient={handleOpenNewClient}
+                onListClients={handleOpenClientsList}
+            />
+            
+            <ClientsListModal
+                show={showClientsListModal}
+                onHide={() => setShowClientsListModal(false)}
+                clients={clients}
+                onEdit={handleEditClient}
+                onDelete={handleDeleteClient}
+                onView={handleViewClient}
+            />
+            
+            <ClientDetailsModal
+                show={showClientDetailsModal}
+                onHide={() => setShowClientDetailsModal(false)}
+                client={viewingClient}
+            />
+
+            <SaleReceiptModal
+                show={showReceiptModal}
+                onHide={() => setShowReceiptModal(false)}
+                sale={selectedSale}
             />
         </React.Fragment>
     );
@@ -1695,4 +2239,473 @@ async function copyToClipboard(text) {
         console.error('Erro ao copiar:', err);
         return false;
     }
-} 
+}
+
+// SaleReceiptModal component para exibir o comprovante de venda
+const SaleReceiptModal = ({ show, onHide, sale }) => {
+    if (!sale) return null;
+
+    const formatPaymentMethod = (method) => {
+        switch (method) {
+            case 'dinheiro': return 'Dinheiro';
+            case 'cartao_credito': return 'Cartão de Crédito';
+            case 'cartao_debito': return 'Cartão de Débito';
+            case 'pix': return 'PIX';
+            case 'crediario': return 'Crediário';
+            default: return method;
+        }
+    };
+
+    const printReceipt = () => {
+        const printWindow = window.open('', '_blank');
+        const userData = JSON.parse(localStorage.getItem('userData')) || {};
+        
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Comprovante de Venda #${sale.id}</title>
+                    <style>
+                        body {
+                            font-family: 'Courier New', monospace;
+                            width: 300px;
+                            margin: 0 auto;
+                            padding: 10px;
+                            font-size: 12px;
+                        }
+                        .header {
+                            text-align: center;
+                            margin-bottom: 20px;
+                        }
+                        .divider {
+                            border-top: 1px dashed #000;
+                            margin: 10px 0;
+                        }
+                        .item {
+                            display: flex;
+                            justify-content: space-between;
+                            margin-bottom: 5px;
+                        }
+                        .total {
+                            font-weight: bold;
+                            margin-top: 10px;
+                            text-align: right;
+                        }
+                        .footer {
+                            text-align: center;
+                            margin-top: 20px;
+                            font-size: 10px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>${userData.company || 'Nome da Empresa'}</h2>
+                        <p>CNPJ: XX.XXX.XXX/0001-XX</p>
+                        <p>Comprovante de Venda #${sale.id}</p>
+                        <p>${new Date(sale.createdAt).toLocaleString()}</p>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    ${sale.client ? `
+                    <div>
+                        <p><strong>Cliente:</strong> ${sale.client.name}</p>
+                        ${sale.client.document ? `<p><strong>CPF/CNPJ:</strong> ${sale.client.document}</p>` : ''}
+                    </div>
+                    <div class="divider"></div>
+                    ` : ''}
+                    
+                    <div>
+                        <p><strong>ITENS</strong></p>
+                        ${sale.items.map(item => `
+                            <div class="item">
+                                <span>${item.quantity}x ${item.product.name}</span>
+                                <span>R$ ${parseFloat(item.price * item.quantity).toFixed(2)}</span>
+                            </div>
+                            <div style="margin-left: 15px; font-size: 10px;">
+                                R$ ${parseFloat(item.price).toFixed(2)} un.
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div>
+                        <div class="item">
+                            <span>Subtotal:</span>
+                            <span>R$ ${sale.items.reduce((total, item) => total + (parseFloat(item.price) * item.quantity), 0).toFixed(2)}</span>
+                        </div>
+                        ${parseFloat(sale.discount) > 0 ? `
+                        <div class="item">
+                            <span>Desconto:</span>
+                            <span>R$ ${parseFloat(sale.discount).toFixed(2)}</span>
+                        </div>
+                        ` : ''}
+                        <div class="item total">
+                            <span>TOTAL:</span>
+                            <span>R$ ${parseFloat(sale.total).toFixed(2)}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div>
+                        <p><strong>Pagamento:</strong> ${formatPaymentMethod(sale.paymentMethod)}</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Obrigado pela preferência!</p>
+                        <p>Este documento não possui valor fiscal</p>
+                    </div>
+                </body>
+            </html>
+        `);
+        
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        setTimeout(function() { printWindow.close(); }, 500);
+    };
+
+    return (
+        <div className={`modal ${show ? 'show' : ''}`} style={{ display: show ? 'block' : 'none' }}>
+            <div className="modal-dialog">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h5 className="modal-title">Comprovante de Venda #{sale.id}</h5>
+                        <button type="button" className="btn-close" onClick={onHide}></button>
+                    </div>
+                    <div className="modal-body">
+                        <div className="text-center mb-3">
+                            <h5>{JSON.parse(localStorage.getItem('userData') || '{}').company || 'Nome da Empresa'}</h5>
+                        </div>
+                        
+                        <div className="d-flex justify-content-between mb-3">
+                            <h6>Data/Hora:</h6>
+                            <span>{new Date(sale.createdAt).toLocaleString()}</span>
+                        </div>
+                        
+                        {sale.client && (
+                            <div className="mb-3">
+                                <h6>Cliente:</h6>
+                                <p className="mb-0">{sale.client.name}</p>
+                                {sale.client.document && <small className="text-muted">CPF/CNPJ: {sale.client.document}</small>}
+                            </div>
+                        )}
+                        
+                        <h6>Produtos:</h6>
+                        <div className="table-responsive mb-3">
+                            <table className="table table-sm">
+                                <thead className="table-light">
+                                    <tr>
+                                        <th>Produto</th>
+                                        <th className="text-center">Preço</th>
+                                        <th className="text-center">Qtde</th>
+                                        <th className="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sale.items.map((item, index) => (
+                                        <tr key={index}>
+                                            <td>{item.product.name}</td>
+                                            <td className="text-center">R$ {parseFloat(item.price).toFixed(2)}</td>
+                                            <td className="text-center">{item.quantity}</td>
+                                            <td className="text-end">R$ {parseFloat(item.price * item.quantity).toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div className="d-flex justify-content-between mb-1">
+                            <h6>Subtotal:</h6>
+                            <span>R$ {sale.items.reduce((total, item) => total + (parseFloat(item.price) * item.quantity), 0).toFixed(2)}</span>
+                        </div>
+                        
+                        {parseFloat(sale.discount) > 0 && (
+                            <div className="d-flex justify-content-between mb-1">
+                                <h6>Desconto:</h6>
+                                <span>R$ {parseFloat(sale.discount).toFixed(2)}</span>
+                            </div>
+                        )}
+                        
+                        <div className="d-flex justify-content-between mb-3">
+                            <h5 className="fw-bold">Total:</h5>
+                            <h5 className="fw-bold">R$ {parseFloat(sale.total).toFixed(2)}</h5>
+                        </div>
+                        
+                        <div className="d-flex justify-content-between mb-1">
+                            <h6>Forma de Pagamento:</h6>
+                            <span>{formatPaymentMethod(sale.paymentMethod)}</span>
+                        </div>
+                    </div>
+                    <div className="modal-footer">
+                        <button type="button" className="btn btn-secondary" onClick={onHide}>Fechar</button>
+                        <button type="button" className="btn btn-primary" onClick={printReceipt}>
+                            <i className="fas fa-print me-2"></i>
+                            Imprimir
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}; 
+
+// Cliente Modal Component
+const ClientModal = ({ show, onHide, client, onSubmit }) => {
+    const [formData, setFormData] = useState(
+        client 
+        ? { ...client } 
+        : { name: '', email: '', phone: '', document: '' }
+    );
+
+    useEffect(() => {
+        if (client) {
+            setFormData({ ...client });
+        } else {
+            setFormData({ name: '', email: '', phone: '', document: '' });
+        }
+    }, [client]);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSubmit(formData);
+        onHide();
+    };
+
+    return (
+        <div className={`modal ${show ? 'show' : ''}`} style={{ display: show ? 'block' : 'none' }}>
+            <div className="modal-dialog">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h5 className="modal-title">{client ? 'Editar Cliente' : 'Novo Cliente'}</h5>
+                        <button type="button" className="btn-close" onClick={onHide}></button>
+                    </div>
+                    <form onSubmit={handleSubmit}>
+                        <div className="modal-body">
+                            <div className="mb-3">
+                                <label className="form-label">Nome</label>
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                                    required
+                                />
+                            </div>
+                            <div className="mb-3">
+                                <label className="form-label">Email</label>
+                                <input
+                                    type="email"
+                                    className="form-control"
+                                    value={formData.email}
+                                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                                />
+                            </div>
+                            <div className="mb-3">
+                                <label className="form-label">Telefone</label>
+                                <input
+                                    type="tel"
+                                    className="form-control"
+                                    value={formData.phone}
+                                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                                />
+                            </div>
+                            <div className="mb-3">
+                                <label className="form-label">CPF/CNPJ</label>
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    value={formData.document}
+                                    onChange={(e) => setFormData({...formData, document: e.target.value})}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-secondary" onClick={onHide}>Cancelar</button>
+                            <button type="submit" className="btn btn-primary">Salvar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Componente ClientOptionsModal
+const ClientOptionsModal = ({ show, onHide, onNewClient, onListClients }) => {
+    return (
+        <div className={`modal ${show ? 'show' : ''}`} style={{ display: show ? 'block' : 'none' }}>
+            <div className="modal-dialog">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h5 className="modal-title">Gerenciar Clientes</h5>
+                        <button type="button" className="btn-close" onClick={onHide}></button>
+                    </div>
+                    <div className="modal-body">
+                        <div className="d-grid gap-3">
+                            <button className="btn btn-primary py-3" onClick={onNewClient}>
+                                <i className="fas fa-user-plus fa-2x mb-2 d-block mx-auto"></i>
+                                <span className="d-block">Cadastrar Novo Cliente</span>
+                            </button>
+                            
+                            <button className="btn btn-info py-3" onClick={onListClients}>
+                                <i className="fas fa-users fa-2x mb-2 d-block mx-auto"></i>
+                                <span className="d-block">Listar / Gerenciar Clientes</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Componente ClientsListModal
+const ClientsListModal = ({ show, onHide, clients, onEdit, onDelete, onView }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    const filteredClients = clients.filter(client => 
+        client.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (client.document && client.document.includes(searchTerm)) ||
+        (client.phone && client.phone.includes(searchTerm))
+    );
+    
+    return (
+        <div className={`modal ${show ? 'show' : ''}`} style={{ display: show ? 'block' : 'none' }}>
+            <div className="modal-dialog modal-lg">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h5 className="modal-title">Gerenciar Clientes</h5>
+                        <button type="button" className="btn-close" onClick={onHide}></button>
+                    </div>
+                    <div className="modal-body">
+                        <div className="mb-3">
+                            <div className="input-group">
+                                <span className="input-group-text">
+                                    <i className="fas fa-search"></i>
+                                </span>
+                                <input 
+                                    type="text" 
+                                    className="form-control"
+                                    placeholder="Buscar por nome, CPF/CNPJ ou telefone..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        
+                        <div className="table-responsive">
+                            <table className="table table-hover">
+                                <thead className="table-light">
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Contato</th>
+                                        <th>CPF/CNPJ</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredClients.map(client => (
+                                        <tr key={client.id}>
+                                            <td>{client.name}</td>
+                                            <td>
+                                                <div>{client.email}</div>
+                                                <small className="text-muted">{client.phone}</small>
+                                            </td>
+                                            <td>{client.document}</td>
+                                            <td>
+                                                <div className="btn-group">
+                                                    <button 
+                                                        className="btn btn-sm btn-info" 
+                                                        onClick={() => onView(client)}
+                                                        title="Visualizar"
+                                                    >
+                                                        <i className="fas fa-eye"></i>
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-sm btn-primary" 
+                                                        onClick={() => onEdit(client)}
+                                                        title="Editar"
+                                                    >
+                                                        <i className="fas fa-edit"></i>
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-sm btn-danger" 
+                                                        onClick={() => onDelete(client.id)}
+                                                        title="Excluir"
+                                                    >
+                                                        <i className="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        {filteredClients.length === 0 && (
+                            <div className="text-center py-4">
+                                <i className="fas fa-users fa-3x text-muted mb-3"></i>
+                                <p className="text-muted">Nenhum cliente encontrado</p>
+                            </div>
+                        )}
+                    </div>
+                    <div className="modal-footer">
+                        <button type="button" className="btn btn-secondary" onClick={onHide}>Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Componente para visualizar detalhes do cliente
+const ClientDetailsModal = ({ show, onHide, client }) => {
+    if (!client) return null;
+    
+    return (
+        <div className={`modal ${show ? 'show' : ''}`} style={{ display: show ? 'block' : 'none' }}>
+            <div className="modal-dialog">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h5 className="modal-title">Detalhes do Cliente</h5>
+                        <button type="button" className="btn-close" onClick={onHide}></button>
+                    </div>
+                    <div className="modal-body">
+                        <div className="card mb-0">
+                            <div className="card-body">
+                                <h5 className="card-title mb-3">{client.name}</h5>
+                                
+                                <div className="mb-3">
+                                    <strong>Email:</strong>
+                                    <p>{client.email || 'Não informado'}</p>
+                                </div>
+                                
+                                <div className="mb-3">
+                                    <strong>Telefone:</strong>
+                                    <p>{client.phone || 'Não informado'}</p>
+                                </div>
+                                
+                                <div className="mb-3">
+                                    <strong>CPF/CNPJ:</strong>
+                                    <p>{client.document || 'Não informado'}</p>
+                                </div>
+                                
+                                <div className="mb-0">
+                                    <strong>Data de Cadastro:</strong>
+                                    <p>{new Date(client.createdAt).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="modal-footer">
+                        <button type="button" className="btn btn-secondary" onClick={onHide}>Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};

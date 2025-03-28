@@ -160,66 +160,71 @@ body {
 
 /* Dashboard Stats */
 .stats-card {
-    background: white;
-    border-radius: 0.75rem;
+    background-color: #fff;
+    border-radius: 0.5rem;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
-    box-shadow: var(--card-shadow);
-    transition: transform var(--transition-speed), box-shadow var(--transition-speed);
-    height: 100%;
-    min-height: 140px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+    border-left: 0.25rem solid;
+    position: relative;
+    transition: transform 0.2s ease-in-out;
 }
 
 .stats-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 0.5rem 2rem rgba(58, 59, 69, 0.2);
-}
-
-.stats-card.products {
-    background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
-    color: white;
-}
-
-.stats-card.inputs {
-    background: linear-gradient(135deg, #1cc88a 0%, #169b6b 100%);
-    color: white;
-}
-
-.stats-card.outputs {
-    background: linear-gradient(135deg, #e74a3b 0%, #be2617 100%);
-    color: white;
-}
-
-.stats-card.balance {
-    background: linear-gradient(135deg, #36b9cc 0%, #2c9faf 100%);
-    color: white;
 }
 
 .stats-card .number {
-    font-size: 2.5rem;
+    font-size: 2rem;
     font-weight: 700;
-    margin-bottom: 0.5rem;
-    line-height: 1.2;
+    margin-bottom: 0.25rem;
 }
 
 .stats-card .label {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 0.875rem;
+    color: #858796;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    opacity: 0.9;
+    font-weight: 600;
 }
 
 .stats-card .icon {
+    font-size: 2rem;
     position: absolute;
     right: 1.5rem;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 3rem;
-    opacity: 0.25;
+    top: 1.5rem;
+    opacity: 0.3;
+}
+
+.stats-card.products {
+    border-left-color: #4e73df;
+}
+
+.stats-card.products .number {
+    color: #4e73df;
+}
+
+.stats-card.inputs {
+    border-left-color: #1cc88a;
+}
+
+.stats-card.inputs .number {
+    color: #1cc88a;
+}
+
+.stats-card.outputs {
+    border-left-color: #e74a3b;
+}
+
+.stats-card.outputs .number {
+    color: #e74a3b;
+}
+
+.stats-card.balance {
+    border-left-color: #f6c23e;
+}
+
+.stats-card.balance .number {
+    color: #f6c23e;
 }
 
 /* Row Gutters */
@@ -452,126 +457,83 @@ body {
 
 /* Product List Styles */
 .product-list {
-    max-height: 600px;
+    max-height: 500px;
     overflow-y: auto;
 }
 
 .product-item {
-    transition: background-color 0.2s ease;
-    border-left: 4px solid transparent;
+    transition: background-color 0.2s;
 }
 
 .product-item:hover {
-    background-color: rgba(78, 115, 223, 0.05);
-    border-left-color: var(--primary);
+    background-color: #f8f9fc;
 }
 
 .product-info {
     flex: 1;
-    min-width: 0;
-    padding-right: 1rem;
 }
 
-.product-info h6 {
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    color: var(--dark);
+/* Avatar */
+.avatar-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: white;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.product-details {
-    font-size: 0.9rem;
-    color: var(--secondary);
+/* Toast */
+.toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 999999;
 }
 
-.product-actions {
-    min-width: 100px;
+/* Spinner overlay */
+.spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
 }
 
-/* Responsive Search Bar */
-.input-group {
-    max-width: 300px;
+/* Dashboard layout */
+.container-fluid {
+    margin-top: 56px; /* Para dar espaço para a barra de navegação fixa */
 }
 
-.input-group-text {
-    background-color: white;
-    border-right: none;
+/* Modal background */
+.modal {
+    background-color: rgba(0, 0, 0, 0.5);
 }
 
-.input-group .form-control {
-    border-left: none;
+/* Estilo para as abas */
+.nav-tabs .nav-link {
+    color: #495057;
+    font-weight: 500;
+    border: none;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
 }
 
-.input-group .form-control:focus {
-    border-color: var(--border-color);
-    box-shadow: none;
+.nav-tabs .nav-link.active {
+    color: #4e73df;
+    border-bottom-color: #4e73df;
+    background-color: transparent;
 }
 
-/* Empty State */
-.empty-state {
-    padding: 2rem;
-    text-align: center;
-}
-
-.empty-state i {
-    color: var(--secondary);
-    margin-bottom: 1rem;
-}
-
-/* Mobile Optimizations */
-@media (max-width: 768px) {
-    .product-item {
-        padding: 1rem;
-    }
-
-    .product-info {
-        padding-right: 0.5rem;
-    }
-
-    .product-actions {
-        min-width: 80px;
-    }
-
-    .product-actions .btn {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.875rem;
-    }
-
-    .input-group {
-        max-width: 100%;
-    }
-
-    .card-header {
-        padding: 1rem;
-    }
-
-    .product-details {
-        font-size: 0.85rem;
-    }
-}
-
-/* Status Badges */
-.badge.bg-success {
-    background-color: rgba(28, 200, 138, 0.1) !important;
-    color: var(--success);
-    border: 1px solid var(--success);
-}
-
-.badge.bg-warning {
-    background-color: rgba(246, 194, 62, 0.1) !important;
-    color: var(--warning);
-    border: 1px solid var(--warning);
-}
-
-.badge.bg-danger {
-    background-color: rgba(231, 74, 59, 0.1) !important;
-    color: var(--danger);
-    border: 1px solid var(--danger);
-}
-
-.badge.bg-secondary {
-    background-color: rgba(133, 135, 150, 0.1) !important;
-    color: var(--secondary);
-    border: 1px solid var(--secondary);
+.nav-tabs .nav-link:hover {
+    border-bottom-color: #ddd;
 }
 
 /* Settings Modal Styles */
@@ -640,10 +602,6 @@ body {
 }
 
 /* Estilos para o modal */
-.modal {
-    background-color: rgba(0, 0, 0, 0.5);
-}
-
 .modal.show {
     display: block;
 }
