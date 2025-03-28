@@ -1,5 +1,5 @@
 // API Configuration
-const API_URL = 'http://localhost:3005/api';
+const API_URL = 'https://strongzonefit.com/api';
 axios.defaults.baseURL = API_URL;
 
 // React Hooks
@@ -822,6 +822,7 @@ const Dashboard = () => {
     const [successMessage, setSuccessMessage] = useState('');
     const [selectedUser, setSelectedUser] = useState(null);
     const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
+    const [companyName, setCompanyName] = useState('');
 
     const fetchData = async () => {
         if (!token) {
@@ -932,6 +933,14 @@ const Dashboard = () => {
         const path = window.location.pathname;
         if (path === '/buscar') {
             setCurrentPage('search');
+        }
+    }, []);
+
+    useEffect(() => {
+        // Carregar o nome da empresa
+        const userData = JSON.parse(localStorage.getItem('userData'));
+        if (userData && userData.company) {
+            setCompanyName(userData.company);
         }
     }, []);
 
@@ -1554,13 +1563,48 @@ const Dashboard = () => {
 const App = () => {
     const { token, user, logout } = useContext(AuthContext);
     const [currentPage, setCurrentPage] = useState('dashboard');
+    const [companyName, setCompanyName] = useState('');
+    const [showModal, setShowModal] = useState(false);
+    const [publicLink, setPublicLink] = useState('');
 
     useEffect(() => {
         const path = window.location.pathname;
         if (path === '/buscar') {
             setCurrentPage('search');
         }
+
+        // Carregar o nome da empresa
+        const userData = JSON.parse(localStorage.getItem('userData'));
+        if (userData && userData.company) {
+            setCompanyName(userData.company);
+        }
     }, []);
+
+    const handlePublicLinkClick = () => {
+        const userData = JSON.parse(localStorage.getItem('userData'));
+        if (!userData) {
+            console.error('Usuário não encontrado');
+            return;
+        }
+
+        const userId = userData.id;
+        const link = `https://strongzonefit.com/products.html?company=${userId}`;
+        setPublicLink(link);
+        setShowModal(true);
+    };
+
+    const handleCopyClick = async () => {
+        const success = await copyToClipboard(publicLink);
+        if (success) {
+            const copyBtn = document.getElementById('copyLinkBtn');
+            if (copyBtn) {
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+                setTimeout(() => {
+                    copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copiar';
+                }, 2000);
+            }
+        }
+    };
 
     if (!token) {
         return <Login />;
@@ -1568,39 +1612,68 @@ const App = () => {
 
     return (
         <div>
-            <nav className="navbar navbar-dark bg-primary">
+            <nav className="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
                 <div className="container-fluid">
-                    <a className="navbar-brand d-flex align-items-center" href="/">
-                        <span className="fw-bold" style={{ fontSize: '1.4rem', letterSpacing: '0.5px' }}>
-                            C<span style={{ fontSize: '1.2rem' }}>&</span>D
-                            <span style={{ marginLeft: '8px', fontWeight: '400' }}>Estoque</span>
-                        </span>
-                    </a>
-                    <div className="d-flex gap-2">
-                        {user && user.isAdmin && (
-                            <button 
-                                className="btn btn-outline-light" 
-                                onClick={() => setCurrentPage('admin')}
-                            >
-                                <i className="fas fa-users-cog me-2"></i>
-                                Painel Admin
-                            </button>
-                        )}
-                        <button 
-                            className="btn btn-outline-light" 
-                            onClick={logout}
-                        >
-                            <i className="fas fa-sign-out-alt me-2"></i>
-                            Sair
+                    <a className="navbar-brand" href="#">{companyName}</a>
+                    <div className="d-flex">
+                        <button className="btn btn-outline-light me-2" onClick={handlePublicLinkClick} title="Gerar Link Público">
+                            <i className="fas fa-share-alt"></i> Link Público
+                        </button>
+                        <button className="btn btn-outline-danger" onClick={logout}>
+                            <i className="fas fa-sign-out-alt"></i> Sair
                         </button>
                     </div>
                 </div>
             </nav>
-            {user && user.isAdmin && currentPage === 'admin' ? (
+
+            {/* Modal para Link Público */}
+            <div className={`modal fade ${showModal ? 'show' : ''}`} 
+                id="publicLinkModal" 
+                style={{ display: showModal ? 'block' : 'none' }}
+                tabIndex="-1">
+                <div className="modal-dialog">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h5 className="modal-title">Link Público dos Produtos</h5>
+                            <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
+                        </div>
+                        <div className="modal-body">
+                            <p>Compartilhe este link com seus clientes para que eles possam visualizar seus produtos:</p>
+                            <div className="input-group mb-3">
+                                <input 
+                                    type="text" 
+                                    className="form-control" 
+                                    value={publicLink} 
+                                    readOnly
+                                />
+                                <button className="btn btn-outline-primary" onClick={handleCopyClick}>
+                                    <i className="fas fa-copy"></i> Copiar
+                                </button>
+                            </div>
+                            <div className="d-flex justify-content-center gap-2 mt-3">
+                                <a 
+                                    href={`https://wa.me/?text=Confira nossos produtos em estoque: ${encodeURIComponent(publicLink)}`}
+                                    className="btn btn-success" 
+                                    target="_blank"
+                                >
+                                    <i className="fab fa-whatsapp"></i> WhatsApp
+                                </a>
+                                <a 
+                                    href={`mailto:?subject=Produtos em Estoque - ${encodeURIComponent(companyName)}&body=Confira nossos produtos em estoque: ${encodeURIComponent(publicLink)}`}
+                                    className="btn btn-primary" 
+                                    target="_blank"
+                                >
+                                    <i className="fas fa-envelope"></i> Email
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="container-fluid py-4 mt-5">
                 <Dashboard />
-            ) : (
-                <Dashboard />
-            )}
+            </div>
         </div>
     );
 };
@@ -1611,4 +1684,15 @@ ReactDOM.render(
         <App />
     </AuthProvider>,
     document.getElementById('root')
-); 
+);
+
+// Função para copiar texto para a área de transferência
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch (err) {
+        console.error('Erro ao copiar:', err);
+        return false;
+    }
+} 

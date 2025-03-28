@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Produtos em Estoque</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4e73df;
+            --secondary-color: #858796;
+            --success-color: #1cc88a;
+            --danger-color: #e74a3b;
+            --background-color: #f8f9fc;
+            --card-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--background-color);
+            padding-bottom: 2rem;
+        }
+
+        .company-header {
+            background: linear-gradient(135deg, var(--primary-color), #224abe);
+            color: white;
+            padding: 3rem 0;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .company-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="10" cy="10" r="1" fill="rgba(255,255,255,0.1)"/></svg>') repeat;
+            opacity: 0.4;
+        }
+
+        .company-header h1 {
+            font-weight: 700;
+            margin: 0;
+            position: relative;
+            font-size: 2.5rem;
+        }
+
+        .company-header p {
+            margin: 0.5rem 0 0;
+            opacity: 0.9;
+            font-size: 1.1rem;
+            position: relative;
+        }
+
+        .filters {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 2rem;
+            transition: transform 0.3s ease;
+        }
+
+        .filters:hover {
+            transform: translateY(-5px);
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--secondary-color);
+        }
+
+        .search-box input {
+            padding-left: 2.5rem;
+            border-radius: 0.5rem;
+            border: 1px solid #e3e6f0;
+            font-size: 0.95rem;
+        }
+
+        .form-select {
+            border-radius: 0.5rem;
+            border: 1px solid #e3e6f0;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        .product-card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: var(--card-shadow);
+            transition: all 0.3s ease;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .product-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 1rem 3rem rgba(58, 59, 69, 0.2);
+        }
+
+        .product-card .card-body {
+            padding: 1.5rem;
+        }
+
+        .product-card .category-badge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: rgba(78, 115, 223, 0.1);
+            color: var(--primary-color);
+            border: 1px solid var(--primary-color);
+            padding: 0.3rem 0.8rem;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .product-card h5 {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+            color: #2d3748;
+        }
+
+        .product-card .description {
+            color: var(--secondary-color);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .product-card .price {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .stock-badge {
+            padding: 0.4rem 0.8rem;
+            border-radius: 2rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .stock-badge.high {
+            background: rgba(28, 200, 138, 0.1);
+            color: var(--success-color);
+            border: 1px solid var(--success-color);
+        }
+
+        .stock-badge.medium {
+            background: rgba(246, 194, 62, 0.1);
+            color: #f6c23e;
+            border: 1px solid #f6c23e;
+        }
+
+        .stock-badge.low {
+            background: rgba(231, 74, 59, 0.1);
+            color: var(--danger-color);
+            border: 1px solid var(--danger-color);
+        }
+
+        .loading-spinner {
+            width: 3rem;
+            height: 3rem;
+            border-width: 0.25rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 1rem;
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            color: var(--secondary-color);
+            margin-bottom: 1rem;
+        }
+
+        .empty-state p {
+            color: var(--secondary-color);
+            font-size: 1.1rem;
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 768px) {
+            .company-header {
+                padding: 2rem 0;
+            }
+
+            .company-header h1 {
+                font-size: 2rem;
+            }
+
+            .filters {
+                padding: 1rem;
+            }
+
+            .filters .col-md-3 {
+                margin-bottom: 1rem;
+            }
+
+            .filters .col-md-3:last-child {
+                margin-bottom: 0;
+            }
+
+            .product-card {
+                margin-bottom: 1rem;
+            }
+
+            .product-card .card-body {
+                padding: 1rem;
+            }
+        }
+
+        /* Animações */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #224abe;
+        }
+
+        .copy-button {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            background: rgba(78, 115, 223, 0.1);
+            border: none;
+            color: var(--primary-color);
+            padding: 0.5rem;
+            border-radius: 50%;
+            width: 2.5rem;
+            height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .copy-button:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .copy-button i {
+            font-size: 1rem;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 0.3rem 0.6rem;
+            border-radius: 0.3rem;
+            font-size: 0.8rem;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 0.5rem;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .tooltip.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .initial-state {
+            text-align: center;
+            padding: 4rem 1rem;
+            background: white;
+            border-radius: 1rem;
+            box-shadow: var(--card-shadow);
+            margin-top: 2rem;
+        }
+
+        .initial-state i {
+            font-size: 4rem;
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+        }
+
+        .initial-state h2 {
+            color: var(--secondary-color);
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .initial-state p {
+            color: var(--secondary-color);
+            font-size: 1.1rem;
+            margin-bottom: 0;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="company-header">
+        <div class="container text-center">
+            <h1 id="companyName">Carregando...</h1>
+            <p>Confira nossos produtos disponíveis em estoque</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="filters animate-fade-in">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Digite o nome do produto que você procura...">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <select id="categoryFilter" class="form-select">
+                        <option value="">Todas as Categorias</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="sortFilter" class="form-select">
+                        <option value="name_asc">Nome (A-Z)</option>
+                        <option value="name_desc">Nome (Z-A)</option>
+                        <option value="price_asc">Menor Preço</option>
+                        <option value="price_desc">Maior Preço</option>
+                        <option value="quantity_desc">Maior Estoque</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="priceFilter" class="form-select">
+                        <option value="">Todos os Preços</option>
+                        <option value="0-50">Até R$ 50</option>
+                        <option value="50-100">R$ 50 - R$ 100</option>
+                        <option value="100-200">R$ 100 - R$ 200</option>
+                        <option value="200+">Acima de R$ 200</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Estado Inicial -->
+        <div id="initialState" class="initial-state">
+            <i class="fas fa-search"></i>
+            <h2>Encontre os produtos que você precisa</h2>
+            <p>Digite o nome do produto na barra de pesquisa acima para visualizar os itens disponíveis em nosso estoque.</p>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loading" class="text-center py-5" style="display: none;">
+            <div class="spinner-border loading-spinner text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+            </div>
+        </div>
+
+        <!-- Grid de Produtos -->
+        <div class="row g-4" id="products-container" style="display: none;">
+            <!-- Produtos serão inseridos aqui via JavaScript -->
+        </div>
+    </div>
+
+    <script>
+        let allProducts = [];
+        let categories = new Set();
+        let companyData = null;
+        let hasSearched = false;
+
+        async function copyProductName(productName, buttonElement) {
+            try {
+                await navigator.clipboard.writeText(productName);
+                
+                // Criar e mostrar tooltip
+                const tooltip = document.createElement('div');
+                tooltip.className = 'tooltip';
+                tooltip.textContent = 'Nome copiado!';
+                buttonElement.appendChild(tooltip);
+                
+                // Mostrar tooltip
+                setTimeout(() => tooltip.classList.add('show'), 50);
+                
+                // Remover tooltip após 2 segundos
+                setTimeout(() => {
+                    tooltip.classList.remove('show');
+                    setTimeout(() => tooltip.remove(), 300);
+                }, 2000);
+            } catch (err) {
+                console.error('Erro ao copiar:', err);
+            }
+        }
+
+        function getCompanyId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const companyId = urlParams.get('company');
+            if (!companyId) {
+                showError('ID da empresa não fornecido');
+                return null;
+            }
+            return companyId;
+        }
+
+        function showError(message) {
+            document.getElementById('companyName').textContent = 'Erro';
+            document.getElementById('initialState').style.display = 'none';
+            document.getElementById('products-container').style.display = 'block';
+            document.getElementById('products-container').innerHTML = `
+                <div class="col-12">
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>${message}</p>
+                    </div>
+                </div>`;
+        }
+
+        async function fetchProducts() {
+            const companyId = getCompanyId();
+            if (!companyId) return;
+
+            try {
+                showLoading(true);
+                const response = await fetch(`https://strongzonefit.com/api/public/company/${companyId}/products`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                companyData = data;
+                allProducts = data.products;
+                document.getElementById('companyName').textContent = data.company;
+                document.title = `Produtos em Estoque - ${data.company}`;
+
+                categories = new Set(allProducts.map(p => p.category));
+                populateCategoryFilter();
+                
+                // Não aplicar filtros automaticamente
+                showLoading(false);
+            } catch (error) {
+                console.error('Erro ao buscar produtos:', error);
+                showError('Erro ao carregar produtos. Por favor, tente novamente mais tarde.');
+            }
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            if (show) {
+                document.getElementById('initialState').style.display = 'none';
+                document.getElementById('products-container').style.display = 'none';
+            }
+        }
+
+        function populateCategoryFilter() {
+            const categoryFilter = document.getElementById('categoryFilter');
+            categoryFilter.innerHTML = '<option value="">Todas as Categorias</option>';
+            [...categories].sort().forEach(category => {
+                categoryFilter.innerHTML += `<option value="${category}">${category}</option>`;
+            });
+        }
+
+        function formatPrice(price) {
+            return Number(price).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            });
+        }
+
+        function getStockBadgeClass(quantity) {
+            if (quantity > 10) return 'high';
+            if (quantity > 5) return 'medium';
+            return 'low';
+        }
+
+        function getStockIcon(quantity) {
+            if (quantity > 10) return 'fa-check-circle';
+            if (quantity > 5) return 'fa-exclamation-circle';
+            return 'fa-exclamation-triangle';
+        }
+
+        function applyFilters() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            // Se não houver termo de busca e não houve busca anterior, manter estado inicial
+            if (!searchTerm && !hasSearched) {
+                document.getElementById('initialState').style.display = 'block';
+                document.getElementById('products-container').style.display = 'none';
+                return;
+            }
+
+            hasSearched = true;
+            document.getElementById('initialState').style.display = 'none';
+            document.getElementById('products-container').style.display = 'block';
+
+            const selectedCategory = document.getElementById('categoryFilter').value;
+            const sortOption = document.getElementById('sortFilter').value;
+            const priceRange = document.getElementById('priceFilter').value;
+
+            let filteredProducts = allProducts.filter(product => {
+                const matchesSearch = product.name.toLowerCase().includes(searchTerm) ||
+                                    (product.description && product.description.toLowerCase().includes(searchTerm));
+                const matchesCategory = !selectedCategory || product.category === selectedCategory;
+                
+                let matchesPrice = true;
+                if (priceRange) {
+                    const [min, max] = priceRange.split('-').map(Number);
+                    if (max) {
+                        matchesPrice = product.price >= min && product.price <= max;
+                    } else {
+                        matchesPrice = product.price >= min;
+                    }
+                }
+
+                return matchesSearch && matchesCategory && matchesPrice;
+            });
+
+            // Ordenação
+            filteredProducts.sort((a, b) => {
+                switch (sortOption) {
+                    case 'name_asc':
+                        return a.name.localeCompare(b.name);
+                    case 'name_desc':
+                        return b.name.localeCompare(a.name);
+                    case 'price_asc':
+                        return a.price - b.price;
+                    case 'price_desc':
+                        return b.price - a.price;
+                    case 'quantity_desc':
+                        return b.quantity - a.quantity;
+                    default:
+                        return 0;
+                }
+            });
+
+            const container = document.getElementById('products-container');
+            
+            if (filteredProducts.length === 0) {
+                container.innerHTML = `
+                    <div class="col-12">
+                        <div class="empty-state">
+                            <i class="fas fa-box-open"></i>
+                            <p>Nenhum produto encontrado com os filtros selecionados</p>
+                        </div>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = filteredProducts.map(product => `
+                <div class="col-12 col-md-6 col-lg-4 animate-fade-in">
+                    <div class="product-card">
+                        <div class="card-body">
+                            <span class="category-badge">${product.category}</span>
+                            <h5 class="card-title">${product.name}</h5>
+                            <p class="description">${product.description || 'Sem descrição disponível'}</p>
+                            <div class="price">${formatPrice(product.price)}</div>
+                            <div class="stock-badge ${getStockBadgeClass(product.quantity)}">
+                                <i class="fas ${getStockIcon(product.quantity)}"></i>
+                                ${product.quantity} unidades em estoque
+                            </div>
+                            <button class="copy-button" onclick="copyProductName('${product.name.replace(/'/g, "\\'")}', this)" title="Copiar nome do produto">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Event Listeners
+        document.getElementById('searchInput').addEventListener('input', applyFilters);
+        document.getElementById('categoryFilter').addEventListener('change', applyFilters);
+        document.getElementById('sortFilter').addEventListener('change', applyFilters);
+        document.getElementById('priceFilter').addEventListener('change', applyFilters);
+
+        // Inicializar
+        document.addEventListener('DOMContentLoaded', fetchProducts);
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 

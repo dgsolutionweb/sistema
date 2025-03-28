@@ -637,4 +637,17 @@ body {
         flex-direction: column;
         gap: 0.5rem;
     }
+}
+
+/* Estilos para o modal */
+.modal {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal.show {
+    display: block;
+}
+
+.modal-backdrop {
+    display: none;
 } 
